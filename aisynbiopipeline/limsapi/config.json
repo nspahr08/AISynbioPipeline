@@ -1,0 +1,26 @@
+{
+  "google_sheets": {
+    "spreadsheet_id": "1Rs5WeIy4bXRKL6DRJ41S3_NAc8JUHdeL7oDya5JEvE4",
+    "credentials_file": "service_account.json",
+    "max_retries": 3,
+    "retry_delay": 2.0
+  },
+  "database": {
+    "db_path": "aisynbiopipeline/limsapi/lims_mirror.db",
+    "archive_path": "aisynbiopipeline/limsapi/archive/"
+  },
+  "sync": {
+    "interval_minutes": 10,
+    "enabled": true,
+    "log_level": "INFO",
+    "log_file": "aisynbiopipeline/limsapi/sync.log"
+  },
+  "archive": {
+    "hourly_retention": 24,
+    "daily_retention": 7,
+    "weekly_retention": 4,
+    "monthly_retention": -1,
+    "compression": true,
+    "auto_cleanup": true
+  }
+}

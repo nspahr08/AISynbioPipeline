@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "LIMS API Configuration Schema",
+  "description": "Configuration schema for the LIMS Google Sheets sync system",
+  "required": ["google_sheets", "database", "sync", "archive"],
+  "properties": {
+    "google_sheets": {
+      "type": "object",
+      "description": "Google Sheets connection settings",
+      "required": ["spreadsheet_id", "credentials_file"],
+      "properties": {
+        "spreadsheet_id": {
+          "type": "string",
+          "description": "The ID of the Google Sheets spreadsheet",
+          "minLength": 1
+        },
+        "credentials_file": {
+          "type": "string",
+          "description": "Path to the service account credentials JSON file",
+          "minLength": 1
+        },
+        "max_retries": {
+          "type": "integer",
+          "description": "Maximum number of retries for API calls",
+          "minimum": 0,
+          "default": 3
+        },
+        "retry_delay": {
+          "type": "number",
+          "description": "Delay in seconds between retries",
+          "minimum": 0,
+          "default": 2.0
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "description": "SQLite database settings",
+      "required": ["db_path", "archive_path"],
+      "properties": {
+        "db_path": {
+          "type": "string",
+          "description": "Path to the SQLite database file",
+          "minLength": 1
+        },
+        "archive_path": {
+          "type": "string",
+          "description": "Directory path for database archives",
+          "minLength": 1
+        }
+      }
+    },
+    "sync": {
+      "type": "object",
+      "description": "Sync daemon settings",
+      "required": ["interval_minutes", "enabled"],
+      "properties": {
+        "interval_minutes": {
+          "type": "integer",
+          "description": "Sync interval in minutes",
+          "minimum": 1,
+          "default": 10
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether sync daemon is enabled",
+          "default": true
+        },
+        "log_level": {
+          "type": "string",
+          "description": "Logging level for sync operations",
+          "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+          "default": "INFO"
+        },
+        "log_file": {
+          "type": "string",
+          "description": "Path to sync log file (optional)",
+          "default": null
+        }
+      }
+    },
+    "archive": {
+      "type": "object",
+      "description": "Archive retention policy settings",
+      "required": ["hourly_retention", "daily_retention", "weekly_retention", "monthly_retention"],
+      "properties": {
+        "hourly_retention": {
+          "type": "integer",
+          "description": "Number of hourly backups to retain",
+          "minimum": 0,
+          "default": 24
+        },
+        "daily_retention": {
+          "type": "integer",
+          "description": "Number of daily backups to retain",
+          "minimum": 0,
+          "default": 7
+        },
+        "weekly_retention": {
+          "type": "integer",
+          "description": "Number of weekly backups to retain",
+          "minimum": 0,
+          "default": 4
+        },
+        "monthly_retention": {
+          "type": "integer",
+          "description": "Number of monthly backups to retain (-1 for infinite)",
+          "minimum": -1,
+          "default": -1
+        },
+        "compression": {
+          "type": "boolean",
+          "description": "Whether to compress archive files",
+          "default": true
+        },
+        "auto_cleanup": {
+          "type": "boolean",
+          "description": "Automatically cleanup old archives",
+          "default": true
+        }
+      }
+    }
+  }
+}

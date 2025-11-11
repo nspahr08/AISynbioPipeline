@@ -1,0 +1,29 @@
+# LIMS API Dependencies
+
+# Google Sheets integration
+gspread>=6.0.0
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+
+# Data manipulation
+pandas>=2.0.0
+
+# Configuration and validation
+jsonschema>=4.19.0
+
+# Scheduling and background tasks
+schedule>=1.2.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.1
+
+# Code quality
+black>=23.9.0
+flake8>=6.1.0
+mypy>=1.5.0
+
+# Utilities
+python-dateutil>=2.8.2
