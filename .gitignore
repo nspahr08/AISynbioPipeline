@@ -60,7 +60,8 @@ aisynbiopipeline/limsapi/archive/
 aisynbiopipeline/limsapi/*.log
 
 # Credentials
-credentials/
+credentials/*
+!credentials/README.md
 service_account.json
 
 # Agent I/O
