@@ -8,7 +8,9 @@
       "Bash(gh:*)",
       "Bash(curl:*)",
       "Bash(git remote add:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(credentials/README.md)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []
