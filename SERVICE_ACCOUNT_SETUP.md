@@ -38,9 +38,13 @@ This guide explains how to set up a Google Cloud Platform service account for ac
 
 ## Step 5: Install Credentials
 
-1. Rename the downloaded JSON file to `service_account.json`
-2. Move it to your AISynbioPipeline project root directory
-3. **IMPORTANT**: Never commit this file to version control (it's in .gitignore)
+1. Create a `credentials` directory in your AISynbioPipeline project root:
+   ```bash
+   mkdir credentials
+   ```
+2. Rename the downloaded JSON file to `service_account.json`
+3. Move it to the `credentials` directory: `credentials/service_account.json`
+4. **IMPORTANT**: Never commit this file to version control (the credentials/ directory is in .gitignore)
 
 ## Step 6: Share Google Sheets with Service Account
 
@@ -73,8 +77,8 @@ If successful, you should see output showing tables being synced.
 ## Troubleshooting
 
 ### Error: "Credentials file not found"
-- Make sure `service_account.json` is in the project root
-- Check the `credentials_file` path in `config.json`
+- Make sure `service_account.json` is in the `credentials/` directory
+- Check the `credentials_file` path in `config.json` (should be `credentials/service_account.json`)
 
 ### Error: "Permission denied" or "403 Forbidden"
 - Make sure you shared the spreadsheet with the service account email
@@ -91,10 +95,10 @@ If successful, you should see output showing tables being synced.
 
 ## Security Best Practices
 
-1. **Never commit `service_account.json` to version control**
+1. **Never commit credentials to version control** (the `credentials/` directory is in .gitignore)
 2. Store the file securely and restrict file permissions:
    ```bash
-   chmod 600 service_account.json
+   chmod 600 credentials/service_account.json
    ```
 3. Only grant the minimum required permissions (Viewer is enough for read-only sync)
 4. Rotate service account keys periodically

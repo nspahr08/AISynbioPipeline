@@ -58,6 +58,9 @@ aisynbiopipeline/limsapi/*.db
 aisynbiopipeline/limsapi/*.db-journal
 aisynbiopipeline/limsapi/archive/
 aisynbiopipeline/limsapi/*.log
+
+# Credentials
+credentials/
 service_account.json
 
 # Agent I/O

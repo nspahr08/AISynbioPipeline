@@ -47,7 +47,8 @@ The LIMS API provides a Python interface for synchronizing data from Google Shee
 1. Set up Google Sheets API credentials:
    - Create a service account in Google Cloud Platform
    - Download the credentials JSON file
-   - Place it in the project root as `service_account.json`
+   - Create a `credentials` directory in the project root
+   - Place the credentials file as `credentials/service_account.json`
 
 2. Configure the LIMS API:
    - Edit `aisynbiopipeline/limsapi/config.json`
@@ -214,7 +215,7 @@ Edit `aisynbiopipeline/limsapi/config.json`:
 {
   "google_sheets": {
     "spreadsheet_id": "your-spreadsheet-id",
-    "credentials_file": "service_account.json"
+    "credentials_file": "credentials/service_account.json"
   },
   "database": {
     "db_path": "aisynbiopipeline/limsapi/lims_mirror.db",
