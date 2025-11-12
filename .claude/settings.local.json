@@ -10,7 +10,8 @@
       "Bash(git remote add:*)",
       "Bash(git push:*)",
       "Bash(credentials/README.md)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(chmod:*)"
     ],
     "deny": [],
     "ask": []

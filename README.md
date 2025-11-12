@@ -70,22 +70,35 @@ for row in results:
 
 ### CLI Usage
 
-The `lims` command provides access to all LIMS functionality:
+The `lims` command provides access to all LIMS functionality.
+
+**Wrapper Script**: For convenience, use `lims.sh` which automatically activates your Python environment:
+
+```bash
+./lims.sh sync           # Instead of: lims sync
+./lims.sh daemon start   # Instead of: lims daemon start
+```
+
+The wrapper script will:
+- Check if a virtual environment is already activated
+- Automatically source `activate.sh` if found and not activated
+- Run the `lims` command with all provided arguments
 
 #### Sync Operations
 
 ```bash
 # Run a manual sync
-lims sync
+./lims.sh sync
+# or: lims sync
 
 # Start the background sync daemon
-lims daemon start
+./lims.sh daemon start
 
 # Stop the daemon
-lims daemon stop
+./lims.sh daemon stop
 
 # Check sync status
-lims status
+./lims.sh status
 ```
 
 #### Query Operations

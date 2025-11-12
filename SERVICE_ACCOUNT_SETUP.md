@@ -69,7 +69,8 @@ This guide explains how to set up a Google Cloud Platform service account for ac
 Run a manual sync to test everything is working:
 
 ```bash
-lims sync
+./lims.sh sync
+# or: lims sync (if your environment is already activated)
 ```
 
 If successful, you should see output showing tables being synced.
@@ -109,6 +110,6 @@ If successful, you should see output showing tables being synced.
 
 Once the service account is set up and working:
 
-1. Start the sync daemon: `lims daemon start`
-2. Check sync status: `lims status`
-3. Query your data: `lims list` and `lims query <table_name>`
+1. Start the sync daemon: `./lims.sh daemon start`
+2. Check sync status: `./lims.sh status`
+3. Query your data: `./lims.sh list` and `./lims.sh query <table_name>`
