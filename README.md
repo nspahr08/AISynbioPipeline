@@ -17,19 +17,17 @@ AISynbioPipeline is a framework for managing an autonomous lab system that suppo
 - Python 3.8 or higher
 - Google Cloud Platform service account with Google Sheets API access
 
-### Install from source
+### Setup
 
 ```bash
 git clone <repository-url>
 cd AISynbioPipeline
-pip install -e .
-```
 
-### Install dependencies
-
-```bash
+# Install dependencies
 pip install -r requirements.txt
 ```
+
+**Note**: Installation via `pip install -e .` is optional. The `lims.sh` wrapper script runs the CLI directly without requiring package installation.
 
 ## LIMS API
 
@@ -54,9 +52,19 @@ The LIMS API provides a Python interface for synchronizing data from Google Shee
    - Edit `aisynbiopipeline/limsapi/config.json`
    - Set your spreadsheet ID and other preferences
 
-### Quick Start
+### Quick Start (CLI)
+
+```bash
+# Use the wrapper script (recommended)
+./lims.sh sync
+./lims.sh daemon start
+./lims.sh query samples --filter status=active
+```
+
+### Quick Start (Python API)
 
 ```python
+# Add the project directory to your Python path or run from project root
 from aisynbiopipeline.limsapi import start_sync_daemon, query_table
 
 # Start the background sync daemon
@@ -72,24 +80,24 @@ for row in results:
 
 The `lims` command provides access to all LIMS functionality.
 
-**Wrapper Script**: For convenience, use `lims.sh` which automatically activates your Python environment:
+**Wrapper Script**: Use `lims.sh` which automatically activates your Python environment and runs the CLI:
 
 ```bash
-./lims.sh sync           # Instead of: lims sync
-./lims.sh daemon start   # Instead of: lims daemon start
+./lims.sh sync
+./lims.sh daemon start
+./lims.sh query samples --filter status=active
 ```
 
 The wrapper script will:
 - Check if a virtual environment is already activated
 - Automatically source `activate.sh` if found and not activated
-- Run the `lims` command with all provided arguments
+- Run the LIMS CLI directly with Python (no installation required)
 
 #### Sync Operations
 
 ```bash
 # Run a manual sync
 ./lims.sh sync
-# or: lims sync
 
 # Start the background sync daemon
 ./lims.sh daemon start

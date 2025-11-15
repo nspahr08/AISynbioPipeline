@@ -70,7 +70,6 @@ Run a manual sync to test everything is working:
 
 ```bash
 ./lims.sh sync
-# or: lims sync (if your environment is already activated)
 ```
 
 If successful, you should see output showing tables being synced.

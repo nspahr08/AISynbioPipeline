@@ -37,13 +37,21 @@ if ! is_venv_activated; then
     fi
 fi
 
-# Check if lims command is available
-if ! command -v lims &> /dev/null; then
-    echo "Error: 'lims' command not found"
-    echo "Please install the package first:"
-    echo "  pip install -e ."
+# Path to the LIMS CLI Python module
+LIMS_CLI="$SCRIPT_DIR/aisynbiopipeline/cli/lims.py"
+
+# Check if the LIMS CLI module exists
+if [[ ! -f "$LIMS_CLI" ]]; then
+    echo "Error: LIMS CLI module not found at $LIMS_CLI"
     exit 1
 fi
 
-# Run the lims command with all provided arguments
-exec lims "$@"
+# Check if python is available
+if ! command -v python &> /dev/null; then
+    echo "Error: 'python' command not found"
+    echo "Please ensure Python is installed and in your PATH"
+    exit 1
+fi
+
+# Run the LIMS CLI directly with Python
+exec python "$LIMS_CLI" "$@"
