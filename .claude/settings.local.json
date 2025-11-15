@@ -12,7 +12,8 @@
       "Bash(credentials/README.md)",
       "Bash(cat:*)",
       "Bash(chmod:*)",
-      "Bash(git check-ignore:*)"
+      "Bash(git check-ignore:*)",
+      "Bash(bash:*)"
     ],
     "deny": [],
     "ask": []
