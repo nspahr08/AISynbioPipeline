@@ -53,5 +53,8 @@ if ! command -v python &> /dev/null; then
     exit 1
 fi
 
+# Add the project root to PYTHONPATH so Python can find the aisynbiopipeline module
+export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"
+
 # Run the LIMS CLI directly with Python
 exec python "$LIMS_CLI" "$@"
