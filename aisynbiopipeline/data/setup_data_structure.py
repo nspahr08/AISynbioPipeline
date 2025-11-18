@@ -7,21 +7,25 @@ sequencing libraries, assemblies, and analysis results.
 
 Directory Structure:
     ai_synbio_data/
-    └── experimental_data/
-        └── sequencing_libraries/
-            └── <library_name>/
-                ├── <library_name>_short_reads/
-                │   ├── received/
-                │   ├── trimmed/
-                │   ├── breseq/
-                │   ├── mapped/
-                │   └── filtered/
-                └── <library_name>_long_reads/
-                    ├── received/
-                    ├── trimmed/
-                    ├── breseq/
-                    ├── mapped/
-                    └── filtered/
+    ├── experimental_data/
+    │   ├── sequencing_libraries/
+    │   │   └── <library_name>/
+    │   │       ├── <library_name>_short_reads/
+    │   │       │   ├── received/
+    │   │       │   ├── trimmed/
+    │   │       │   ├── breseq/
+    │   │       │   │   └── breseq_<params>/
+    │   │       │   └── mapped/
+    │   │       │       └── mapped_<params>/
+    │   │       ├── <library_name>_long_reads/
+    │   │       │   ├── received/
+    │   │       │   └── filtered/
+    │   │       └── <library_name>_hybrid_assemblies/
+    │   ├── proteomics_data/
+    │   └── robotic_OD_data/
+    └── reference_data/
+        ├── reference_genomes/
+        └── blast_dbs/
 """
 
 import argparse
@@ -55,12 +59,17 @@ def create_library_structure(
         data_root / "experimental_data" / "sequencing_libraries" / library_name
     )
 
-    # Subdirectories for each analysis type
-    subdirs = ['received', 'trimmed', 'breseq', 'mapped', 'filtered']
-
+    # Create subdirectories based on read type
     for read_type in read_types:
         # Create read type directory: library_name_short_reads or library_name_long_reads
         read_dir = library_base / f"{library_name}_{read_type}_reads"
+
+        if read_type == 'short':
+            # Short reads: received, trimmed, breseq/, mapped/
+            subdirs = ['received', 'trimmed', 'breseq', 'mapped']
+        else:  # long reads
+            # Long reads: received, filtered
+            subdirs = ['received', 'filtered']
 
         for subdir in subdirs:
             dir_path = read_dir / subdir
@@ -68,22 +77,49 @@ def create_library_structure(
             created_dirs.append(dir_path)
             print(f"Created: {dir_path}")
 
+    # Create hybrid assemblies directory
+    hybrid_dir = library_base / f"{library_name}_hybrid_assemblies"
+    hybrid_dir.mkdir(parents=True, exist_ok=True)
+    created_dirs.append(hybrid_dir)
+    print(f"Created: {hybrid_dir}")
+
     return created_dirs
 
 
-def setup_data_root(data_root: Path) -> Path:
+def setup_data_root(data_root: Path, include_reference: bool = False) -> Path:
     """
     Set up the root data directory structure.
 
     Args:
         data_root: Root directory for data
+        include_reference: Whether to create reference_data directories
 
     Returns:
         Path to experimental_data directory
     """
+    # Create experimental data directories
     experimental_data = data_root / "experimental_data" / "sequencing_libraries"
     experimental_data.mkdir(parents=True, exist_ok=True)
     print(f"Created: {experimental_data}")
+
+    proteomics = data_root / "experimental_data" / "proteomics_data"
+    proteomics.mkdir(parents=True, exist_ok=True)
+    print(f"Created: {proteomics}")
+
+    robotic_od = data_root / "experimental_data" / "robotic_OD_data"
+    robotic_od.mkdir(parents=True, exist_ok=True)
+    print(f"Created: {robotic_od}")
+
+    # Create reference data directories if requested
+    if include_reference:
+        ref_genomes = data_root / "reference_data" / "reference_genomes"
+        ref_genomes.mkdir(parents=True, exist_ok=True)
+        print(f"Created: {ref_genomes}")
+
+        blast_dbs = data_root / "reference_data" / "blast_dbs"
+        blast_dbs.mkdir(parents=True, exist_ok=True)
+        print(f"Created: {blast_dbs}")
+
     return experimental_data
 
 
@@ -110,6 +146,9 @@ def main():
 Examples:
   # Set up root data structure only
   python setup_data_structure.py --root ai_synbio_data
+
+  # Set up root with reference data directories
+  python setup_data_structure.py --root ai_synbio_data --reference
 
   # Set up root and create a library structure
   python setup_data_structure.py --root ai_synbio_data --library my_library_ABC
@@ -143,6 +182,12 @@ Examples:
     )
 
     parser.add_argument(
+        '--reference',
+        action='store_true',
+        help='Create reference_data directories (reference_genomes, blast_dbs)'
+    )
+
+    parser.add_argument(
         '--create-readme',
         action='store_true',
         help='Create README files in each directory'
@@ -159,7 +204,7 @@ Examples:
     print()
 
     # Set up root structure
-    experimental_data = setup_data_root(data_root)
+    experimental_data = setup_data_root(data_root, include_reference=args.reference)
 
     if args.create_readme:
         readme_content = """# AISynbioPipeline Data Directory
@@ -169,19 +214,26 @@ This directory contains experimental data for the AISynbioPipeline project.
 ## Structure
 
 - `sequencing_libraries/` - Sequencing library data organized by library name
-  - Each library has subdirectories for short and/or long reads
-  - Each read type has subdirectories for different analysis stages:
-    - `received/` - Raw data as received from sequencing facility
-    - `trimmed/` - Quality-trimmed reads
-    - `breseq/` - Breseq analysis results
-    - `mapped/` - Mapped reads
-    - `filtered/` - Filtered reads
+  - Each library has a base folder containing:
+    - `<library>_short_reads/` - Short read data
+      - `received/` - Raw data from sequencing
+      - `trimmed/` - Quality-trimmed reads
+      - `breseq/` - Breseq analysis results (subdirs: breseq_<params>/)
+      - `mapped/` - Mapped reads (subdirs: mapped_<params>/)
+    - `<library>_long_reads/` - Long read data
+      - `received/` - Raw data from sequencing
+      - `filtered/` - Filtered reads
+    - `<library>_hybrid_assemblies/` - Assemblies using both read types
+- `proteomics_data/` - Proteomics experimental data
+- `robotic_OD_data/` - Robotic OD measurement data
 
 ## Naming Conventions
 
-- Library folders: `<library_name>/`
-- Read type folders: `<library_name>_short_reads/` or `<library_name>_long_reads/`
-- Breseq folders: `breseq_<ref_genome>_<pop_or_con>_<coverage>_<params>/`
+- Library base folders: `<library_name>/`
+- Read type folders: `<library_name>_short_reads/`, `<library_name>_long_reads/`
+- Breseq folders: `breseq_<ref_genome>_<pop|con>_<coverage>_<other_params>/`
+  - Examples: `breseq_ADP1_pop_100x/`, `breseq_ADP1_con/`
+- Mapped folders: `mapped_<params>/`
 """
         create_readme(data_root / "experimental_data", readme_content)
 
@@ -204,14 +256,18 @@ Sequencing library data for {library_name}.
 ## Subdirectories
 
 - `{library_name}_short_reads/` - Short read data (if applicable)
-- `{library_name}_long_reads/` - Long read data (if applicable)
+  - `received/` - Raw data from sequencing facility
+  - `trimmed/` - Quality-trimmed reads
+  - `breseq/` - Breseq mutation analysis results
+    - Subdirectories named: `breseq_<ref>_<pop|con>_<coverage>_<params>/`
+  - `mapped/` - Reads mapped to reference genome
+    - Subdirectories named: `mapped_<params>/`
 
-Each read type directory contains:
-- `received/` - Raw data from sequencing facility
-- `trimmed/` - Quality-trimmed reads
-- `breseq/` - Breseq mutation analysis results
-- `mapped/` - Reads mapped to reference genome
-- `filtered/` - Filtered reads based on quality/mapping criteria
+- `{library_name}_long_reads/` - Long read data (if applicable)
+  - `received/` - Raw data from sequencing facility
+  - `filtered/` - Filtered reads based on quality criteria
+
+- `{library_name}_hybrid_assemblies/` - Assemblies using both short and long reads
 """
                 create_readme(library_base, library_readme)
 

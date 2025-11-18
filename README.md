@@ -445,28 +445,47 @@ Upload local sequencing reads to KBase.
 
 ### Data Directory Structure
 
-The job system uses a standardized directory structure for experimental data:
+The task system uses a standardized directory structure for experimental data:
 
 ```
 ai_synbio_data/
-└── experimental_data/
-    └── sequencing_libraries/
-        └── <library_name>/
-            ├── <library_name>_short_reads/
-            │   ├── received/   # Raw data from sequencing
-            │   ├── trimmed/    # Quality-trimmed reads
-            │   ├── breseq/     # Breseq analysis results
-            │   ├── mapped/     # Mapped reads
-            │   └── filtered/   # Filtered reads
-            └── <library_name>_long_reads/
-                └── (same subdirectories as short_reads)
+├── experimental_data/
+│   ├── sequencing_libraries/
+│   │   └── <library_name>/
+│   │       ├── <library_name>_short_reads/
+│   │       │   ├── received/             # Raw data from sequencing
+│   │       │   ├── trimmed/              # Quality-trimmed reads
+│   │       │   ├── breseq/               # Breseq analysis results
+│   │       │   │   └── breseq_<params>/  # Parameter-specific results
+│   │       │   └── mapped/               # Mapped reads
+│   │       │       └── mapped_<params>/  # Parameter-specific results
+│   │       ├── <library_name>_long_reads/
+│   │       │   ├── received/             # Raw data from sequencing
+│   │       │   └── filtered/             # Filtered reads
+│   │       └── <library_name>_hybrid_assemblies/
+│   ├── proteomics_data/
+│   └── robotic_OD_data/
+└── reference_data/
+    ├── reference_genomes/
+    └── blast_dbs/
 ```
+
+**Naming Conventions:**
+- Library base folders: `<library_name>/`
+- Read type folders: `<library_name>_short_reads/`, `<library_name>_long_reads/`
+- Breseq folders: `breseq_<ref_genome>_<pop|con>_<coverage>_<other_params>/`
+  - Examples: `breseq_ADP1_pop_100x/`, `breseq_ADP1_con/`
+- Mapped folders: `mapped_<params>/`
+- Hybrid assemblies: `<library_name>_hybrid_assemblies/`
 
 #### Setting Up Data Structure
 
 ```bash
 # Set up the root data directory
 python aisynbiopipeline/data/setup_data_structure.py --root ai_synbio_data
+
+# Set up with reference data directories
+python aisynbiopipeline/data/setup_data_structure.py --root ai_synbio_data --reference
 
 # Create a library structure
 python aisynbiopipeline/data/setup_data_structure.py \

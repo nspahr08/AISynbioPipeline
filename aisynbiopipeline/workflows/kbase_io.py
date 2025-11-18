@@ -18,25 +18,6 @@ if KBUTILLIB_PATH not in sys.path:
     sys.path.insert(0, KBUTILLIB_PATH)
 
 
-def get_data_directory(library_name: str, read_type: str, data_root: str = "ai_synbio_data") -> Path:
-    """
-    Get the data directory for a sequencing library.
-
-    Args:
-        library_name: Name of the sequencing library
-        read_type: Type of reads ('short' or 'long')
-        data_root: Root directory for data
-
-    Returns:
-        Path to the data directory
-    """
-    data_dir = (
-        Path(data_root) / "experimental_data" / "sequencing_libraries" /
-        library_name / f"{library_name}_{read_type}_reads"
-    )
-    return data_dir
-
-
 def get_received_directory(library_name: str, read_type: str, data_root: str = "ai_synbio_data") -> Path:
     """
     Get the 'received' directory for downloaded reads.
@@ -49,8 +30,10 @@ def get_received_directory(library_name: str, read_type: str, data_root: str = "
     Returns:
         Path to the received directory
     """
-    data_dir = get_data_directory(library_name, read_type, data_root)
-    received_dir = data_dir / "received"
+    # Use the data module's path functions
+    from aisynbiopipeline.data import get_received_path
+
+    received_dir = get_received_path(library_name, read_type, data_root)
     received_dir.mkdir(parents=True, exist_ok=True)
     return received_dir
 
