@@ -13,7 +13,11 @@
       "Bash(cat:*)",
       "Bash(chmod:*)",
       "Bash(git check-ignore:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(sqlite3:*)",
+      "Bash(./lims.sh sync:*)",
+      "Bash(pip install:*)",
+      "Bash(./lims.sh:*)"
     ],
     "deny": [],
     "ask": []

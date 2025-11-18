@@ -26,7 +26,9 @@ from .query import (
     get_table_schema,
     query_table,
     get_all_records,
-    get_record_by_id
+    get_record_by_id,
+    get_table_count,
+    search_table
 )
 
 from .sync import (
@@ -51,6 +53,8 @@ __all__ = [
     'query_table',
     'get_all_records',
     'get_record_by_id',
+    'get_table_count',
+    'search_table',
     # Sync functions
     'sync_all_sheets',
     'start_sync_daemon',

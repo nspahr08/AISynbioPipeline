@@ -3,7 +3,8 @@
     "spreadsheet_id": "1Rs5WeIy4bXRKL6DRJ41S3_NAc8JUHdeL7oDya5JEvE4",
     "credentials_file": "credentials/service_account.json",
     "max_retries": 3,
-    "retry_delay": 2.0
+    "retry_delay": 2.0,
+    "worksheet_delay": 5.0
   },
   "database": {
     "db_path": "aisynbiopipeline/limsapi/lims_mirror.db",

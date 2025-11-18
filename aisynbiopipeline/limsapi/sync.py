@@ -116,8 +116,15 @@ def sync_all_sheets(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         logger.info(f"Found {len(worksheet_names)} worksheets: {', '.join(worksheet_names)}")
 
         # Sync each worksheet
-        for worksheet_name in worksheet_names:
+        for i, worksheet_name in enumerate(worksheet_names):
             try:
+                # Add delay between worksheets to avoid rate limits (skip first worksheet)
+                if i > 0:
+                    delay = config['google_sheets'].get('worksheet_delay', 1.0)
+                    if delay > 0:
+                        logger.debug(f"Waiting {delay}s before next worksheet to avoid rate limits")
+                        time.sleep(delay)
+
                 logger.info(f"Syncing worksheet: {worksheet_name}")
 
                 # Get schema from sheet
@@ -138,10 +145,14 @@ def sync_all_sheets(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
                     sync_result['total_rows_updated'] += updated
                     logger.info(f"Inserted {inserted}, updated {updated} rows in {worksheet_name}")
 
-                    # Calculate hashes for current data
-                    current_hashes = [
-                        db_manager.calculate_row_hash(row) for row in sheet_data
-                    ]
+                    # Calculate hashes for current data (must sanitize keys like upsert_rows does)
+                    current_hashes = []
+                    for row in sheet_data:
+                        sanitized_row = {
+                            k.replace(' ', '_').replace('-', '_'): v
+                            for k, v in row.items()
+                        }
+                        current_hashes.append(db_manager.calculate_row_hash(sanitized_row))
 
                     # Mark deleted rows
                     deleted = db_manager.mark_deleted_rows(worksheet_name, current_hashes)
