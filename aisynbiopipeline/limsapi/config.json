@@ -7,7 +7,7 @@
     "worksheet_delay": 5.0
   },
   "database": {
-    "db_path": "aisynbiopipeline/limsapi/lims_mirror.db",
+    "db_path": "/storage/lims/lims_mirror.backup.db",
     "archive_path": "aisynbiopipeline/limsapi/archive/"
   },
   "sync": {

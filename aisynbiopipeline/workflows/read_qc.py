@@ -2,15 +2,42 @@ import os
 import subprocess
 
 
-def run_fastqc(path_to_file):
+def run_fastqc(path_to_file, threads=2):
     output_dir = os.path.dirname(path_to_file)
     fastqc_cmd = [
         'fastqc', path_to_file,
-        '-t', '10'
+        '-t', str(threads)
     ]
 
     print(f"Running FastQC on {path_to_file}")
     subprocess.run(fastqc_cmd, check=True, cwd=output_dir)
+
+
+def run_fastp(path_to_fwd, path_to_rev, path_to_fwd_out, path_to_rev_out, threads=16, polyG=10):
+    # Make sure that base file name for R1 and R2 are the same
+    # otherwise, use R1 base name, but print a warning
+    output_name_fwd = path_to_fwd_out.split('_R1')[0]
+    output_name_rev = path_to_rev_out.split('_R2')[0]
+    if output_name_fwd != output_name_rev:
+        print("Warning: R1 and R2 file names do not match. Using R1 base name for output.")
+    output_dir = os.path.dirname(output_name_fwd)
+    
+    fastp_cmd = [
+        'fastp',
+        '-i', path_to_fwd,
+        '-I', path_to_rev,
+        '-o', path_to_fwd_out,
+        '-O', path_to_rev_out,
+        '-w', str(threads),
+        '-j', os.path.join(output_dir, output_name_fwd + '_fastp.json'),
+        '-h', os.path.join(output_dir, output_name_fwd + '_fastp.html'),
+        '--poly_g_min_len', str(polyG)
+    ]
+
+    print(f"Running fastp on {path_to_fwd} and {path_to_rev}")
+    subprocess.run(fastp_cmd, check=True, cwd=output_dir)
+
+    return {'out_R1': path_to_fwd_out, 'out_R2': path_to_rev_out}
 
 
 def run_filtlong(input_fastq, output_dir, min_length=1000, keep_percent=90):
@@ -51,3 +78,15 @@ def run_nanocomp(files, sample_names, output_dir, threads=10):
         ] + files + ['--names'] + sample_names
 
     subprocess.run(nanocomp_cmd, check=True, cwd=output_dir)
+
+
+def run_multiqc(folder, output_dir=None):
+    multiqc_cmd = [
+        'multiqc',
+        folder,
+        '--force'
+    ]
+    output_dir = folder if output_dir is None else output_dir
+    subprocess.run(multiqc_cmd, cwd=output_dir)
+
+    return os.path.join(folder, 'multiqc_report.html')

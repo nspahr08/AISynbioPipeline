@@ -1,0 +1,4 @@
+{
+    "REF_GENOMES": "/storage/synbio/ai_synbio_data/reference_data/genomes",
+    "SEQ_ORDERS": "/storage/synbio/ai_synbio_data/experimental_data/sequencing_orders/"
+}
