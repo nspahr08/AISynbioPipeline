@@ -1365,16 +1365,6 @@ class Breseq:
                         f"Command: {' '.join(cmd)}\n"
                         f"Error output: {e.stderr}"
                     ) from e
-                # Add #=TITLE sample_name to genome diff file
-                # Read the existing content
-                with open(self.gd_file, 'r') as f:
-                    content = f.readlines()
-                # Add the title line at the beginning
-                title_line = f'#=TITLE\t{self.title}\n'
-                content.insert(0, title_line)
-                # Write back the modified content
-                with open(self.gd_file, 'w') as f:
-                    f.writelines(content)
 
         except subprocess.CalledProcessError as e:
             raise RuntimeError(
@@ -1383,6 +1373,19 @@ class Breseq:
                 f"Error output: {e.stderr}"
             ) from e
 
+        print(f"Adding {self.title} to {self.gd_file}")
+        # Add #=TITLE sample_name to genome diff file
+        # Read the existing content
+        with open(self.gd_file, 'r') as f:
+            content = f.readlines()
+        # Add the title line at the beginning
+        title_line = f'#=TITLE\t{self.title}\n'
+        content.insert(0, title_line)
+        print(content)
+        # Write back the modified content
+        with open(self.gd_file, 'w') as f:
+            f.writelines(content)
+            
         # Update the registry with this version_name and params
         self._update_registry()
 

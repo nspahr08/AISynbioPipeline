@@ -11,6 +11,7 @@ import time
 from datetime import datetime
 from typing import Dict, Any, Optional
 import schedule
+from pathlib import Path
 
 from .config import load_config
 from .sheets import SheetsReader
@@ -40,8 +41,9 @@ def configure_logging(config: Dict[str, Any]) -> logging.Logger:
         Configured logger instance
     """
     log_level = config['sync'].get('log_level', 'INFO')
+    # log_file = Path(__file__).parent.parent.parent / config['sync'].get('log_file')
     log_file = config['sync'].get('log_file')
-
+    
     logger = logging.getLogger('lims_sync')
     logger.setLevel(getattr(logging, log_level))
 

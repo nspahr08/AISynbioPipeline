@@ -60,6 +60,7 @@ aisynbiopipeline/limsapi/*.db
 aisynbiopipeline/limsapi/*.db-journal
 aisynbiopipeline/limsapi/archive/
 aisynbiopipeline/limsapi/*.log
+aisynbiopipeline/limsapi/config.json
 
 # Credentials
 credentials/*
