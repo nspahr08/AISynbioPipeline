@@ -215,7 +215,8 @@ class DatabaseManager:
         """
         Insert or update rows in the table.
 
-        Uses row hash to detect changes. Only updates if hash differs.
+        Uses row hash to detect changes. Only inserts rows with new hashes.
+        Skips rows that already exist with the same hash (deduplication).
 
         Args:
             table_name: Name of the table
@@ -231,7 +232,6 @@ class DatabaseManager:
             return (0, 0)
 
         conn = self.get_connection()
-        current_schema = self.get_table_schema(table_name)
 
         inserted = 0
         updated = 0
@@ -248,6 +248,17 @@ class DatabaseManager:
                 row_hash = self.calculate_row_hash(sanitized_row)
                 now = datetime.now().isoformat()
 
+                # CHECK IF ROW WITH THIS HASH ALREADY EXISTS
+                existing_hash = conn.execute(
+                    f'SELECT row_hash FROM "{table_name}" WHERE row_hash=?',
+                    (row_hash,)
+                ).fetchone()
+
+                if existing_hash:
+                    # Row with same hash already exists - skip
+                    # (deduplication)
+                    continue
+
                 # Build column lists
                 columns = list(sanitized_row.keys())
                 values = [sanitized_row[col] for col in columns]
@@ -260,34 +271,23 @@ class DatabaseManager:
                 placeholders = ','.join(['?'] * len(values))
                 columns_str = ','.join([f'"{col}"' for col in columns])
 
-                # Try insert
-                insert_sql = f'INSERT INTO "{table_name}" ({columns_str}) VALUES ({placeholders})'
-
-                try:
-                    conn.execute(insert_sql, values)
-                    inserted += 1
-                except sqlite3.IntegrityError:
-                    # Row exists, check if update needed
-                    # For simplicity, we'll update if ANY field changed
-                    # In production, you'd want a primary key
-                    update_pairs = [f'"{col}"=?' for col in sanitized_row.keys()]
-                    update_pairs.append('deleted=?')
-                    update_pairs.append('last_synced=?')
-                    update_pairs.append('row_hash=?')
-
-                    update_sql = f'UPDATE "{table_name}" SET {",".join(update_pairs)} WHERE row_hash!=?'
-                    update_values = list(sanitized_row.values()) + [0, now, row_hash, row_hash]
-
-                    cursor = conn.execute(update_sql, update_values)
-                    if cursor.rowcount > 0:
-                        updated += 1
+                # Insert new row
+                insert_sql = (
+                    f'INSERT INTO "{table_name}" ({columns_str}) '
+                    f'VALUES ({placeholders})'
+                )
+                conn.execute(insert_sql, values)
+                inserted += 1
 
             conn.commit()
             return (inserted, updated)
 
         except Exception as e:
             conn.rollback()
-            raise Exception(f"Failed to upsert rows in table '{table_name}': {e}")
+            error_msg = (
+                f"Failed to upsert rows in table '{table_name}': {e}"
+            )
+            raise Exception(error_msg)
 
     def mark_deleted_rows(self, table_name: str, current_hashes: List[str]) -> int:
         """
