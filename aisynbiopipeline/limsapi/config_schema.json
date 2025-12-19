@@ -77,6 +77,11 @@
           "type": "string",
           "description": "Path to sync log file (optional)",
           "default": null
+        },
+        "lock_file": {
+          "type": "string",
+          "description": "Path to sync daemon lock file for multi-process synchronization",
+          "default": "/storage/synbio/.aisynbio_sync_daemon.lock"
         }
       }
     },

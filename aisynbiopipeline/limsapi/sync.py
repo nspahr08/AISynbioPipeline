@@ -5,13 +5,16 @@ This module handles the synchronization between Google Sheets and the SQLite
 mirror database, including a background daemon with scheduling.
 """
 
+import fcntl
 import logging
+import os
 import threading
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional
-import schedule
 from pathlib import Path
+from typing import Dict, Any, Optional
+
+import schedule
 
 from .config import load_config
 from .sheets import SheetsReader
@@ -21,6 +24,7 @@ from .database import DatabaseManager
 # Global daemon state
 _daemon_thread: Optional[threading.Thread] = None
 _daemon_running = False
+_daemon_lock_fd: Optional[int] = None
 _sync_status = {
     'last_sync': None,
     'last_success': None,
@@ -67,6 +71,114 @@ def configure_logging(config: Dict[str, Any]) -> logging.Logger:
         logger.addHandler(file_handler)
 
     return logger
+
+
+def _get_daemon_lock_path(config: Dict[str, Any]) -> Path:
+    """
+    Get the path to the daemon lock file.
+
+    Args:
+        config: Configuration dict
+
+    Returns:
+        Path object for the lock file
+    """
+    lock_file = config['sync'].get(
+        'lock_file'
+    )
+    return Path(lock_file)
+
+
+def _acquire_daemon_lock(
+    logger: logging.Logger,
+    config: Dict[str, Any]
+) -> Optional[int]:
+    """
+    Acquire an exclusive lock for the sync daemon.
+
+    Uses fcntl file locking to ensure only one daemon can run across
+    multiple processes on the same system.
+
+    Args:
+        logger: Logger instance
+        config: Configuration dict
+
+    Returns:
+        Lock file descriptor if acquired, None if lock already held
+
+    Raises:
+        Exception: If lock file cannot be created or accessed
+    """
+    lock_path = _get_daemon_lock_path(config)
+    logger.debug(f"Attempting to acquire lock at {lock_path}")
+
+    try:
+
+        # Open/create lock file
+        lock_fd = os.open(
+            str(lock_path),
+            os.O_CREAT | os.O_RDWR,
+            0o666
+        )
+
+        # Try to acquire exclusive lock (non-blocking)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            # Write current PID to lock file
+            os.ftruncate(lock_fd, 0)
+            os.lseek(lock_fd, 0, os.SEEK_SET)
+            pid_str = str(os.getpid())
+            os.write(lock_fd, pid_str.encode())
+            os.fsync(lock_fd)
+
+            logger.debug(
+                f"Successfully acquired daemon lock (PID: {os.getpid()})"
+            )
+            return lock_fd
+
+        except BlockingIOError:
+            # Lock is held by another process
+            os.close(lock_fd)
+            try:
+                # Try to read the PID from the lock file
+                with open(lock_path, 'r') as f:
+                    other_pid = f.read().strip()
+                logger.warning(
+                    f"Daemon lock is held by process {other_pid}"
+                )
+            except Exception:
+                logger.warning("Daemon lock is held by another process")
+            return None
+
+    except Exception as e:
+        logger.error(f"Failed to acquire daemon lock: {e}")
+        raise
+
+
+def _release_daemon_lock(
+    logger: logging.Logger,
+    lock_fd: int,
+    config: Dict[str, Any]
+) -> None:
+    """
+    Release the daemon lock.
+
+    Args:
+        logger: Logger instance
+        lock_fd: Lock file descriptor
+        config: Configuration dict
+    """
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        os.close(lock_fd)
+
+        lock_path = _get_daemon_lock_path(config)
+        lock_path.unlink(missing_ok=True)
+
+        logger.debug("Successfully released daemon lock")
+
+    except Exception as e:
+        logger.error(f"Failed to release daemon lock: {e}")
 
 
 def sync_all_sheets(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -252,12 +364,14 @@ def start_sync_daemon(config: Optional[Dict[str, Any]] = None) -> None:
         config: Configuration dict (loads from file if not provided)
 
     Raises:
-        Exception: If daemon is already running
+        Exception: If daemon is already running or lock cannot be acquired
     """
-    global _daemon_thread, _daemon_running
+    global _daemon_thread, _daemon_running, _daemon_lock_fd
 
     if _daemon_running:
-        raise Exception("Sync daemon is already running")
+        raise Exception(
+            "Sync daemon is already running in this process"
+        )
 
     if config is None:
         config = load_config()
@@ -265,13 +379,32 @@ def start_sync_daemon(config: Optional[Dict[str, Any]] = None) -> None:
     if not config['sync']['enabled']:
         raise Exception("Sync is disabled in configuration")
 
-    _daemon_running = True
-    _daemon_thread = threading.Thread(
-        target=_daemon_worker,
-        args=(config,),
-        daemon=True
-    )
-    _daemon_thread.start()
+    logger = configure_logging(config)
+
+    # Try to acquire system-wide lock BEFORE setting state
+    _daemon_lock_fd = _acquire_daemon_lock(logger, config)
+    if _daemon_lock_fd is None:
+        raise Exception(
+            "Sync daemon is already running "
+            "(locked by another process)"
+        )
+
+    try:
+        _daemon_running = True  # Set state AFTER lock acquired
+        _daemon_thread = threading.Thread(
+            target=_daemon_worker,
+            args=(config,),
+            daemon=True
+        )
+        _daemon_thread.start()
+
+    except Exception:
+        # Rollback state and release lock if thread creation fails
+        _daemon_running = False
+        if _daemon_lock_fd is not None:
+            _release_daemon_lock(logger, _daemon_lock_fd, config)
+            _daemon_lock_fd = None
+        raise
 
 
 def stop_sync_daemon() -> None:
@@ -281,17 +414,31 @@ def stop_sync_daemon() -> None:
     Raises:
         Exception: If daemon is not running
     """
-    global _daemon_running, _daemon_thread
+    global _daemon_running, _daemon_thread, _daemon_lock_fd
 
     if not _daemon_running:
         raise Exception("Sync daemon is not running")
 
-    _daemon_running = False
+    config = load_config()
+    logger = configure_logging(config)
 
-    # Wait for thread to finish (with timeout)
-    if _daemon_thread:
-        _daemon_thread.join(timeout=10)
-        _daemon_thread = None
+    try:
+        _daemon_running = False  # Signal thread to stop
+
+        if _daemon_thread:
+            _daemon_thread.join(timeout=10)
+            if _daemon_thread.is_alive():
+                logger.warning(
+                    "Daemon thread did not stop cleanly "
+                    "within timeout"
+                )
+            _daemon_thread = None
+
+    finally:
+        # Always release lock, even if thread join fails
+        if _daemon_lock_fd is not None:
+            _release_daemon_lock(logger, _daemon_lock_fd, config)
+            _daemon_lock_fd = None
 
 
 def get_sync_status() -> Dict[str, Any]:
