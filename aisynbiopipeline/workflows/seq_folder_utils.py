@@ -289,7 +289,11 @@ class Library:
         data = list(samples_dict.values())
         df = pd.DataFrame(data).sort_values('sample_name')
         
-        return df
+        return df.reset_index(drop=Trueexport PATH="/opt/micromamba/bin/:$PATH"
+eval "$(micromamba shell hook --shell bash)"
+micromamba activate
+micromamba activate aisynbio_env
+python -m aisynbiopipeline.tasks.breseq_task 1)
 
 
 class SeqSample:
@@ -330,6 +334,13 @@ class SeqSample:
         if self.library.platform != 'Illumina':
             return []
         return self._get_fastq_files('trimmed')
+
+    @property
+    def trimmed_fastp(self) -> List[Path]:
+        """Get paths to fastp files for this sample in trimmed folder (Illumina only)."""
+        if self.library.platform != 'Illumina':
+            return []
+        return self._get_fastp_files('trimmed')
     
     @property
     def filtered(self) -> List[Path]:
@@ -368,6 +379,18 @@ class SeqSample:
         
         # Sort to ensure consistent ordering (R1 before R2 if paired-end)
         return sorted(fastq_files)
+
+    def _get_fastp_files(self, folder: str) -> List[Path]:
+        """Get fastp files for this sample in a given folder."""
+        folder_path = self.library.path / folder
+        if not folder_path.exists():
+            return []
+        
+        # Look for fastp files containing the sample name
+        pattern = f"{self.sample_name}*_fastp*"
+        fastp_files = list(folder_path.glob(pattern))
+        
+        return fastp_files
     
     def delete(self, subfolder: str):
         """
@@ -403,6 +426,10 @@ class SeqSample:
             for fastq_file in self.trimmed:
                 if fastq_file.exists():
                     fastq_file.unlink()
+            # Delete fastp files in trimmed folder
+            for fastp_file in self.trimmed_fastp:
+                if fastp_file.exists():
+                    fastp_file.unlink()
                     
         elif subfolder == 'filtered':
             # Delete fastq files in filtered folder

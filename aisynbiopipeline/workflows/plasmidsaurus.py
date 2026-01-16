@@ -86,19 +86,19 @@ def download_results(item_code: str, access_token: str, destination_dir: str):
     pprint(res.json())
     print("\n\n")
 
-    # # Download the results for this item
-    # print(f"DOWNLOADING RESULTS FOR {item_code} \n")
-    # res = requests.get(
-    #     f"{API_URL}/api/item/{item_code}/results",
-    #     headers={"Authorization": f"Bearer {access_token}"},
-    # )
+    # Download the results for this item
+    print(f"DOWNLOADING RESULTS FOR {item_code} \n")
+    res = requests.get(
+        f"{API_URL}/api/item/{item_code}/results",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
 
-    # if res.ok:
-    #     filename = Path(destination_dir) / f"{item_code}_results.zip"
-    #     download_file(res.json()["link"], filename)
-    #     unzip_file(filename, Path(destination_dir) / f"{item_code}_results")
-    # else:
-    #     print(f"No results found for {item_code}: {res.content}")
+    if res.ok:
+        filename = Path(destination_dir) / f"{item_code}_results.zip"
+        download_file(res.json()["link"], filename)
+        unzip_file(filename, Path(destination_dir) / f"{item_code}_results")
+    else:
+        print(f"No results found for {item_code}: {res.content}")
 
     # Download the reads for this item
     print(f"DOWNLOADING READS FOR {item_code} \n")

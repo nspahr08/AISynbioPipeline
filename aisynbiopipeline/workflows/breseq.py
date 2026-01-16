@@ -18,10 +18,11 @@ from typing import List, Optional, Dict, Any, Union
 import csv
 import zlib
 import base64
+from aisynbiopipeline.workflows.reference_utils import get_ref_genomes_path
 
 
 def compare_gdiff(reference, out_file, gdiffs, format='HTML'):
-    reference = os.path.join(_get_ref_genomes_path(), reference)
+    reference = os.path.join(get_ref_genomes_path(), reference)
     compare_cmd = [
         'gdtools', 'ANNOTATE',
         '-r', reference,
@@ -31,18 +32,11 @@ def compare_gdiff(reference, out_file, gdiffs, format='HTML'):
     subprocess.run(compare_cmd, check=True)
     return out_file
 
+# This function is also in reference_utils.py. I am keeping it here because some old jupyter notebooks pull it from the breseq module.
 def list_reference_genomes() -> list:
     """List all available reference genomes."""
-    return os.listdir(_get_ref_genomes_path())
-
-def _get_ref_genomes_path() -> str:
-    """Get REF_GENOMES path from config.json file."""
-    config_path = Path(__file__).parent / "config.json"
-    # Load configuration
-    with open(config_path, 'r') as f:
-        config = json.load(f)
-        ref_genomes_path = config['REF_GENOMES']
-    return ref_genomes_path
+    return os.listdir(get_ref_genomes_path())
+    
 
 def _get_libraries_path() -> str:
     """Get LIB_DIR path from config.json file."""
@@ -131,7 +125,7 @@ class Breseq_params:
             polymorphism_prediction: Whether to use polymorphism mode (True/False)
             **kwargs: Any other breseq parameters
         """
-        self._ref_genomes_path = _get_ref_genomes_path()
+        self._ref_genomes_path = get_ref_genomes_path()
 
         # Set required parameters
         self.reference = reference
@@ -657,7 +651,7 @@ class Breseq:
         self.params = params
         self.params._validate_required()
 
-        self.reference_path = Path(_get_ref_genomes_path()) / self.params.reference
+        self.reference_path = Path(get_ref_genomes_path()) / self.params.reference
         
         # Compute output folder
         if not breseq_folder:
@@ -719,7 +713,7 @@ class Breseq:
         # Keep a copy of the reference on the Breseq object for easy
         # access.
         breseq.reference = breseq.params.reference
-        breseq.reference_path = Path(_get_ref_genomes_path()) / breseq.reference
+        breseq.reference_path = Path(get_ref_genomes_path()) / breseq.reference
         breseq.output_folder = output_folder
         breseq.breseq_folder = output_folder.parent
         breseq.gd_file = os.path.join(str(breseq.output_folder), 'data', 'output.gd')
@@ -840,7 +834,7 @@ class Breseq:
         
         # Parse arguments into a dictionary
         args_dict = {}
-        ref_genomes_path = _get_ref_genomes_path()
+        ref_genomes_path = get_ref_genomes_path()
         i = 0
         while i < len(parts):
             arg = parts[i]
