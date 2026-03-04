@@ -102,6 +102,7 @@ class SeqOrder:
         """Delete the sequencing order folder and all its contents."""
         if self.path.exists():
             shutil.rmtree(self.path)
+        print(f"SeqOrder {self.name} at {self.path} was deleted.")
     
     def rename(self, new_name: str):
         """
@@ -289,13 +290,9 @@ class Library:
         data = list(samples_dict.values())
         df = pd.DataFrame(data).sort_values('sample_name')
         
-        return df.reset_index(drop=Trueexport PATH="/opt/micromamba/bin/:$PATH"
-eval "$(micromamba shell hook --shell bash)"
-micromamba activate
-micromamba activate aisynbio_env
-python -m aisynbiopipeline.tasks.breseq_task 1)
+        return df.reset_index(drop=True)
 
-
+        
 class SeqSample:
     """
     Represents a sequencing sample within a library.

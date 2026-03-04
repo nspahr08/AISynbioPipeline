@@ -3,7 +3,9 @@ import subprocess
 import tempfile
 from Bio import SeqIO
 import shutil
-from binfo_utils import convert_gbk_to_gff3
+# from binfo_utils import convert_gbk_to_gff3
+import pysam
+from pathlib import Path
 
 
 def map_reads(fwd_reads, rvs_reads, reference, output_dir, keep_index=False, index_dir=None, sample_name=None):
@@ -203,3 +205,73 @@ def map_and_feature_count(
     )
 
     return output_dir
+
+
+# class PileupCol:
+#     """Set of basecalls from reads mapped to 1-bp locus in a reference genome.
+#     """
+
+#     def __init__(
+#         self,
+#         bam_path: [Path|str],
+#         locus: int
+#     ):
+#         self.bam_path = bam_path
+#         self.locus = locus
+        
+#         if not bam_path.exists():
+#             raise FileNotFoundError(f"bam_path does not exist: {self.bam_path}")
+
+#         samfile = pysam.AlignmentFile(self.bam_path, "rb")
+#         self.reference_name = samfile.get_reference_name(0)
+#         if samfile.lengths[0] < self.locus:
+#             raise ValueError(f"Locus must be smaller or equal to length of {self.reference_name}.")
+
+#         iter = samfile.pileup(
+#             reference=self.reference_name,
+#             start=self.locus-1,
+#             stop=self.locus,
+#             truncate=True
+#         )
+        
+#         col = next(iter)
+
+#         basecalls = col.get_query_sequences()
+#         self.basecalls = [x.upper() for x in basecalls]
+
+class PileupCol:
+    """Set of basecalls from reads mapped to a locus in a reference genome.
+    """
+
+    def __init__(
+        self,
+        bam_path: [Path|str],
+        locus: tuple
+    ):
+        self.bam_path = bam_path
+        self.locus = locus
+        self.start = self.locus[0]
+        self.stop = self.locus[1]
+        
+        if not bam_path.exists():
+            raise FileNotFoundError(f"bam_path does not exist: {self.bam_path}")
+
+        samfile = pysam.AlignmentFile(self.bam_path, "rb")
+        self.reference_name = samfile.get_reference_name(0)
+        if samfile.lengths[0] < self.stop:
+            raise ValueError(f"Locus must be smaller or equal to length of {self.reference_name}.")
+
+        iter = samfile.pileup(
+            reference=self.reference_name,
+            start=self.start-1,
+            stop=self.stop,
+            truncate=True
+        )
+
+        basecalls = []
+        for i in iter:
+            basecalls.append(i.get_query_sequences())
+
+        basecalls = [''.join(group) for group in zip(*basecalls)]
+        self.basecalls = [x.upper() for x in basecalls]
+        

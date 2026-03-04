@@ -33,7 +33,7 @@ app.conf.update(
     timezone='UTC',
     enable_utc=True,
     task_track_started=True,
-    task_time_limit=10800,  # 3 hour default timeout
+    task_time_limit=36000,  # 10 hour default timeout 18000,  # 5 hour default timeout 10800,  # 3 hour default timeout
     worker_prefetch_multiplier=1,
     result_expires=86400,  # Results expire after 24 hours
 
@@ -59,7 +59,9 @@ def breseq(self,
            polymorphism_prediction,
            breseq_folder=None,
            limit_fold_coverage=0,
-           num_processors=4):
+           num_processors=4,
+           polymorphism_frequency_cutoff=0.05
+          ):
     """
     Celery task to run breseq.
     """
@@ -94,7 +96,8 @@ def breseq(self,
             'reference': reference,
             'polymorphism_prediction': polymorphism_prediction,
             'limit_fold_coverage': limit_fold_coverage,
-            'num_processors': num_processors
+            'num_processors': num_processors,
+            'polymorphism_frequency_cutoff': polymorphism_frequency_cutoff
         }
     )
 
@@ -104,7 +107,8 @@ def breseq(self,
             reference,
             polymorphism_prediction,
             limit_fold_coverage=limit_fold_coverage,
-            num_processors=num_processors
+            num_processors=num_processors,
+            polymorphism_frequency_cutoff=polymorphism_frequency_cutoff
         )
         breseq = Breseq(read_paths, params, breseq_folder)
         print(breseq.params.version_name)

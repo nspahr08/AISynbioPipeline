@@ -661,6 +661,7 @@ class Breseq:
         self.output_folder = breseq_folder / Path(self.params.version_name)
         self.exists = self.output_folder.exists() and (self.output_folder / 'output' / 'output.done').exists()
         self.gd_file = os.path.join(str(self.output_folder), 'data', 'output.gd')
+        self.bam_path = Path(self.output_folder) / 'data' / 'reference.bam'
         self.title = os.path.basename(self.breseq_folder)
         # Per-instance cache of region average coverage values
         # Key: region string (e.g., "NC_005966:1-1000") -> float or None
@@ -717,9 +718,10 @@ class Breseq:
         breseq.output_folder = output_folder
         breseq.breseq_folder = output_folder.parent
         breseq.gd_file = os.path.join(str(breseq.output_folder), 'data', 'output.gd')
+        breseq.bam_path = Path(breseq.output_folder) / 'data' / 'reference.bam'
         breseq.title = os.path.basename(breseq.breseq_folder)
 
-        breseq.exists = True
+        breseq.exists = breseq.output_folder.exists() and (breseq.output_folder / 'output' / 'output.done').exists()
         # Initialize per-instance cache for region coverage
         breseq.region_average_cov = {}
 
@@ -1398,11 +1400,10 @@ class Breseq:
         bam2cov_dir = Path(self.output_folder) / 'BAM2COV'
         bam2cov_dir.mkdir(parents=True, exist_ok=True)
 
-        # Determine BAM input path from the run output
-        bam_path = Path(self.output_folder) / 'data' / 'reference.bam'
-        if not bam_path.exists():
+        # Ensure bam exists
+        if not self.bam_path.exists():
             raise FileNotFoundError(
-                f"BAM file not found for this run: {bam_path}. "
+                f"BAM file not found for this run: {self.bam_path}. "
                 "Ensure the Breseq run produced the BAM file."
             )
 
@@ -1420,7 +1421,7 @@ class Breseq:
 
         bam2cov_cmd = [
             'breseq', 'BAM2COV',
-            '-b', str(bam_path),
+            '-b', str(self.bam_path),
             '-o', str(outfile),
             '-r', region,
             '-f', str(fasta_path),
