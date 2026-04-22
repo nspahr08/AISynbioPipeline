@@ -1,0 +1,320 @@
+"""
+Robotic ALE data processing module.
+"""
+
+import pandas as pd
+from pathlib import Path
+import shutil
+import re
+import os
+from datetime import datetime
+
+
+PLATE_WELLS = [f"{row}{col}" for row in "ABCDEFGH" for col in range(1, 13)]
+REQUIRED_PLATE_LAYOUT_COLUMNS = [
+    'Name', 'Experiment', 'Type', 'Condition', 'Strain name',
+    'Transforming DNA', 'Protocol', 'Parent sample', 'Replicate samples',
+    'Plate name', 'Microtiter plate well', 'Plotting group',
+    'Plotting group name', 'Blank'
+]
+REQUIRED_PROCESSED_DATA_COLUMNS = [
+    'filename', 'experiment', 'file_ID', 'timestamp', 'series',
+    'plate_index', 'transfer', 'reading', 'row', 'column', 'od', 'well',
+    'datetime', 'Name', 'Experiment', 'Type', 'Condition', 'Strain name',
+    'Transforming DNA', 'Protocol', 'Parent sample', 'Replicate samples',
+    'Plate name', 'Microtiter plate well', 'Plotting group',
+    'Plotting group name', 'Blank', 'background', 'innoculation_timestamp',
+    'timepoint'
+    ]
+
+
+def load_and_verify_plate_layout(path, write_to=None):
+    """
+    Load and verify a plate layout CSV file.
+    
+    Validates that the plate layout contains all required columns, properly
+    formatted plate wells, and consistent naming across the layout.
+    
+    Args:
+        path: Path to the plate_layout.csv file.
+        write_to: Optional path to write the verified dataframe to a new location.
+    
+    Returns:
+        pandas.DataFrame: The verified plate layout dataframe.
+    
+    Raises:
+        ValueError: If the plate layout fails validation checks.
+    """
+    # Load CSV into dataframe
+    df = pd.read_csv(path)
+    
+    # Required columns
+    required_columns = REQUIRED_PLATE_LAYOUT_COLUMNS
+    
+    # Check for required columns
+    missing_columns = set(required_columns) - set(df.columns)
+    if missing_columns:
+        raise ValueError(f"Missing required columns: {missing_columns}")
+    
+    # Check that all well values are valid
+    invalid_wells = set(df['Microtiter plate well']) - set(PLATE_WELLS)
+    if invalid_wells:
+        raise ValueError(f"Invalid well coordinates found: {sorted(invalid_wells)}")
+    
+    # Verify each unique 'Plate name' has 96 unique well coordinates
+    wells_per_plate = df.groupby('Plate name')['Microtiter plate well'].nunique()
+    invalid_plates = wells_per_plate[wells_per_plate != 96]
+    if len(invalid_plates) > 0:
+        raise ValueError(
+            f"Plates with incorrect number of wells (expected 96): "
+            f"{invalid_plates.to_dict()}"
+        )
+    
+    # Verify each 'Plate name'-'Microtiter plate well' combination occurs only once
+    plate_well_combo = df.groupby(['Plate name', 'Microtiter plate well']).size()
+    duplicates = plate_well_combo[plate_well_combo > 1]
+    if len(duplicates) > 0:
+        raise ValueError(
+            f"Duplicate 'Plate name'-'Microtiter plate well' combinations found: "
+            f"{duplicates.to_dict()}"
+        )
+    
+    # Verify each unique 'Name' has a unique 'Plate name'-'Microtiter plate well' combination
+    name_location = df.groupby('Name')[['Plate name', 'Microtiter plate well']].nunique()
+    duplicates_by_name = name_location[
+        (name_location['Plate name'] > 1) | (name_location['Microtiter plate well'] > 1)
+    ]
+    if len(duplicates_by_name) > 0:
+        raise ValueError(
+            f"Sample 'Name' values with multiple plate locations: "
+            f"{duplicates_by_name.index.tolist()}"
+        )
+    
+    # Write to new location if specified
+    if write_to is not None:
+        Path(write_to).parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(write_to, index=False)
+    
+    return df
+
+
+def load_and_verify_robotic_od_data(data_folder, file_name_pattern, destination_folder=None, copy_to_destination=False):
+    """
+    Load and verify robotic OD data files.
+    
+    Copies all .txt files from the data folder to the destination folder,
+    validating that filenames match the pattern and data is properly formatted.
+    Copying is optional via the `copy_to_destination` flag.
+    
+    Args:
+        data_folder: Path to the folder containing .txt data files.
+        file_name_pattern: Regex pattern that filenames must match with named groups.
+        destination_folder: Optional path to copy verified files to. Required if copy_to_destination=True.
+        copy_to_destination: Whether to copy validated files to destination folder.
+    
+    Returns:
+        list: List of paths to the copied files, or input files if copy disabled.
+    
+    Raises:
+        ValueError: If any file fails validation.
+    """
+    data_path = Path(data_folder)
+    dest_path = None
+    if copy_to_destination:
+        if destination_folder is None:
+            raise ValueError("destination_folder must be provided when copy_to_destination is True")
+        dest_path = Path(destination_folder)
+        dest_path.mkdir(parents=True, exist_ok=True)
+    
+    copied_files = []
+    
+    # Find all .txt files
+    txt_files = list(data_path.glob("*.txt"))
+    
+    if not txt_files:
+        raise ValueError(f"No .txt files found in {data_folder}")
+    
+    # file_name_pattern is expected to be a regex with named groups
+    regex = re.compile(file_name_pattern)
+    required_groups = {'experiment', 'timestamp', 'uniqueID', 'series', 'transfer', 'timepoint'}
+    if not required_groups.issubset(regex.groupindex.keys()):
+        missing = required_groups - set(regex.groupindex.keys())
+        raise ValueError(
+            f"file_name_pattern regex must define named groups {sorted(required_groups)}, missing: {sorted(missing)}"
+        )
+
+    for txt_file in txt_files:
+        # Check filename regex and named groups
+        match = regex.match(txt_file.name)
+        if not match:
+            raise ValueError(f"Filename {txt_file.name} does not match regex pattern {file_name_pattern}")
+        if not required_groups.issubset(match.groupdict().keys()):
+            raise ValueError(
+                f"Filename {txt_file.name} match does not include required groups: {sorted(required_groups)}"
+            )
+
+        # Load and verify data
+        try:
+            df = pd.read_csv(txt_file, sep=',', header=None)
+        except Exception as e:
+            raise ValueError(f"Failed to read {txt_file.name} as comma-delimited: {e}")
+        
+        # Check shape: 8 rows x 12 columns
+        if df.shape != (8, 12):
+            raise ValueError(f"File {txt_file.name} has shape {df.shape}, expected (8, 12)")
+        
+        # Check all values are floats
+        try:
+            df.astype(float)
+        except ValueError as e:
+            raise ValueError(f"File {txt_file.name} contains non-numeric values: {e}")
+        
+        # Copy to destination if requested
+        if copy_to_destination:
+            dest_file = dest_path / txt_file.name
+            shutil.copy2(txt_file, dest_file)
+            copied_files.append(str(dest_file))
+        else:
+            copied_files.append(str(txt_file))
+
+    # Ensure that there are any files that passed validation checks
+    if len(copied_files) == 0:
+        raise ValueError("No files passed validation checks.")
+    
+    return copied_files
+
+
+def extract_robotic_od_data_to_df(
+    data_files: list[str],
+    fname_pattern,
+):
+    # Initialize data df
+    data = pd.DataFrame()
+    
+    # Define file pattern for plate reader files
+    fname_pattern = re.compile(fname_pattern)
+    
+    # Read info from plate reader file names and file content into df
+    for f in data_files:
+        # Initialize row in dataframe
+        data_row = {}
+        match = fname_pattern.match(os.path.basename(f))
+        
+        # Parse info contained in plate reader file name
+        data_row['filename'] = f
+        data_row['experiment'] = str(match.group('experiment')) 
+        data_row['file_ID'] = str(match.group('uniqueID'))
+        data_row['timestamp'] = int(match.group('timestamp'))
+        data_row['series'] = str(match.group('series'))
+        data_row['plate_index'] = int(match.group('transfer'))
+        data_row['transfer'] = int(match.group('transfer'))
+        data_row['reading'] = str(match.group('timepoint'))
+   
+        # Read plate reader file
+        datafile = pd.read_csv(f, header=None)
+
+        # Process plate data
+        for row in range(8):
+            for col in range(12):
+                data_row['row'] = row
+                data_row['column'] = col
+                data_row['od'] = datafile.iloc[row, col]
+                data = pd.concat([data, pd.Series(data_row).to_frame().T])
+
+    data.reset_index(inplace=True, drop=True)
+
+    # Translate row and column numbers to well names
+    data['well'] = data.apply(
+        lambda x: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'][x['row']] + str(x['column']+1), axis=1
+    )
+    
+    # Translate timestamp into isoformat time
+    data['datetime'] = data['timestamp'].apply(
+        lambda x: datetime.fromtimestamp(x).isoformat()
+    )
+    # data['datetime'] = pd.to_datetime(data['datetime'])
+
+    return data
+
+
+def map_plate_layout_to_data(robotic_od_data_df, verified_plate_layout_df):
+    df = robotic_od_data_df.merge(
+        verified_plate_layout_df,
+        left_on=['series', 'well'],
+        right_on=['Plate name', 'Microtiter plate well'],
+        how='left'
+        )
+    return df
+
+
+def compute_background(df):  # DOUBLE CHECK THAT THIS IS CORRECT!!!
+    
+    # Calculate a background value for each plate reader measurement
+    # (based on the wells that only contain media)
+    
+    df['background'] = pd.NA
+    df['background'] = df.groupby(
+        ['experiment', 'series', 'plate_index', 'timestamp']
+        )['od'].transform(
+        lambda x: x[df.loc[x.index, 'Strain name'].isna()].mean()
+        )
+    
+    return df
+
+
+def compute_inoculation(df, first_reading_is_blank=False):
+    """
+    Compute innoculation timestamp based on the oldest timestamp
+    or based on the second oldest timestamp if the first reading
+    was taken before inoculation.
+    Then, using the incoulation timestamp as 0 h reading,
+    compute the timepoint in hours for each timestamp.
+    """
+
+    def inoc_time_function(x):
+        return x.min()
+    
+    if first_reading_is_blank:
+        def inoc_time_function(x):
+            if len(x.drop_duplicates()) == 1:
+                return x.drop_duplicates().iloc[0]
+            else:
+                return x.drop_duplicates().sort_values().iloc[1]
+    
+    df['innoculation_timestamp'] = pd.NA
+    df.loc[
+        ~(pd.isna(df['transfer'])),
+        'innoculation_timestamp'
+        ] = df.groupby(
+            ['series','plate_index', 'transfer']
+            )['datetime'].transform(inoc_time_function)
+
+    def calc_timepoint(time_0, time):
+        
+        if not pd.isna(time_0):
+            timepoint = (
+                datetime.fromisoformat(time) - datetime.fromisoformat(time_0)
+            ).total_seconds()/3600
+    
+        else:
+            timepoint = pd.NA
+    
+        return timepoint
+    
+    df['timepoint'] =  df.apply(
+        lambda x: calc_timepoint(x['innoculation_timestamp'], x['datetime']),
+        axis=1
+    )
+
+    return df
+
+
+def verify_and_write_processed_data(df, output_path=None):
+    # Verify that all required columns are present
+    for col in REQUIRED_PROCESSED_DATA_COLUMNS:
+        if col not in df.columns:
+            raise ValueError(f"Column '{col}' is missing from the processed data.")
+
+    if output_path:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(output_path, index=False)
