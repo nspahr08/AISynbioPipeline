@@ -73,8 +73,8 @@ def create_manifest(folder: str, platform: str = 'illumina') -> pd.DataFrame:
                 })
         df = pd.DataFrame(data)
         manifest = df.groupby(['sample_name', 'sample_number'], as_index=False).agg({
-            'fwd_fastq': lambda x: [x for x in list(x) if x != None],
-            'rvs_fastq': lambda x: [x for x in list(x) if x != None]
+            'fwd_fastq': lambda x: [x for x in list(x) if x != None][0],
+            'rvs_fastq': lambda x: [x for x in list(x) if x != None][0]
         })
         return manifest.sort_values('sample_name')
 
