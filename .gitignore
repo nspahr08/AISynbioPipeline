@@ -66,6 +66,9 @@ aisynbiopipeline/limsapi/config.json
 credentials/*
 !credentials/README.md
 service_account.json
+plasmidsaurus.json
+token.json
+credentials_oauth.json
 
 # Agent I/O
 agent-io/

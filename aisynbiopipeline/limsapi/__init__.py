@@ -10,15 +10,19 @@ Main components:
 - sync: Synchronization daemon and logic
 - archive: Database archival and retention
 - query: Read-only query interface
+- googledrive: Google Drive file operations
 
 Example usage:
-    from aisynbiopipeline.limsapi import start_sync_daemon, query_table
+    from aisynbiopipeline.limsapi import start_sync_daemon, query_table, upload_or_replace
 
     # Start the sync daemon
     start_sync_daemon()
 
     # Query data
     results = query_table('samples', filters={'status': 'active'})
+
+    # Upload files to Google Drive
+    upload_or_replace('/path/to/file.txt', 'folder_id_on_drive')
 """
 
 from .query import (
@@ -45,6 +49,12 @@ from .archive import (
     cleanup_archives
 )
 
+from .googledrive import (
+    get_drive_service,
+    upload_or_replace,
+    find_file_in_folder
+)
+
 __version__ = '0.1.0'
 __all__ = [
     # Query functions
@@ -65,4 +75,8 @@ __all__ = [
     'list_archives',
     'restore_archive',
     'cleanup_archives',
+    # Google Drive functions
+    'get_drive_service',
+    'upload_or_replace',
+    'find_file_in_folder',
 ]
