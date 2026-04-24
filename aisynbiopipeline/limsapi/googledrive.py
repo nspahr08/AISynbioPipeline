@@ -9,7 +9,8 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 
 CONFIG = load_config()
 credentials_path = get_drive_credentials_path(CONFIG)
-OAUTH_CREDENTIALS_FILE = credentials_path / CONFIG["drive"]["credentials_file"]
+SERVICE_ACCOUNT_CREDENTIALS_FILE = credentials_path / CONFIG["google_sheets"]["credentials_file"]
+# OAUTH_CREDENTIALS_FILE = credentials_path / CONFIG["drive"]["credentials_file"]
 TOKEN_FILE = credentials_path / CONFIG["drive"]["token_file"]
 SCOPES = CONFIG["drive"]["scopes"]
 
@@ -24,13 +25,10 @@ def get_drive_service():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                OAUTH_CREDENTIALS_FILE, SCOPES
+            from google.oauth2 import service_account
+            creds = service_account.Credentials.from_service_account_file(
+                str(SERVICE_ACCOUNT_CREDENTIALS_FILE), scopes=SCOPES
             )
-            creds = flow.run_local_server(port=0)
-
-        with open(TOKEN_FILE, "w") as token:
-            token.write(creds.to_json())
 
     return build("drive", "v3", credentials=creds)
 
