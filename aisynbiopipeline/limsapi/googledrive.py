@@ -1,6 +1,6 @@
 import os
 import logging
-from .config import load_config
+from .config import load_config, get_drive_credentials_path
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
@@ -8,8 +8,9 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 CONFIG = load_config()
-OAUTH_CREDENTIALS_FILE = CONFIG["drive"]["credentials_file"]
-TOKEN_FILE = CONFIG["drive"]["token_file"]
+credentials_path = get_drive_credentials_path(CONFIG)
+OAUTH_CREDENTIALS_FILE = credentials_path / CONFIG["drive"]["credentials_file"]
+TOKEN_FILE = credentials_path / CONFIG["drive"]["token_file"]
 SCOPES = CONFIG["drive"]["scopes"]
 
 

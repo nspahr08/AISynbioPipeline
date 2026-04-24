@@ -156,6 +156,48 @@ def get_credentials_path(config: Dict[str, Any] = None) -> Path:
         return creds_path
 
 
+def get_drive_credentials_path(config: Dict[str, Any] = None) -> Path:
+    """
+    Get the absolute path to the Google Drive oauth credentials file.
+
+    Args:
+        config: Configuration dict (loads from file if not provided)
+
+    Returns:
+        Absolute path to credentials file
+
+    Raises:
+        FileNotFoundError: If credentials file doesn't exist
+    """
+    if config is None:
+        config = load_config()
+
+    creds_file = config['drive']['credentials_file']
+
+    # Make absolute if relative
+    if not os.path.isabs(creds_file):
+        # Try several locations
+        locations = [
+            Path(__file__).parent / creds_file,  # Same dir as this file
+            Path(__file__).parent.parent.parent / creds_file,  # Project root
+            Path(creds_file),  # Current working directory
+        ]
+
+        for location in locations:
+            if location.exists():
+                return location.parent.parent
+
+        raise FileNotFoundError(
+            f"Credentials file not found: {creds_file}. "
+            f"Searched in: {[str(loc) for loc in locations]}"
+        )
+    else:
+        creds_path = Path(creds_file).parent.parent
+        if not creds_path.exists():
+            raise FileNotFoundError(f"Credentials file not found: {creds_path}")
+        return creds_path
+
+
 # Load configuration on module import
 try:
     CONFIG = load_config()
