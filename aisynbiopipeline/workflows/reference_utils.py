@@ -68,3 +68,9 @@ def genomic_region_from_features(genbank_file, feature1, feature2):
 
     starts, ends = zip(*feature_coords.values())
     return record.name, min(starts), max(ends)
+
+
+def get_genome_length(genbank_file):
+    record = SeqIO.read(genbank_file, "genbank")
+    genome_length = len(record.seq)
+    return genome_length

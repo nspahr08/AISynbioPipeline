@@ -21,7 +21,7 @@ import base64
 from aisynbiopipeline.workflows.reference_utils import get_ref_genomes_path
 
 
-def compare_gdiff(reference, out_file, gdiffs, format='HTML'):
+def compare_gdiff(reference, out_file, gdiffs, format='HTML', preserve_evidence=False):
     reference = os.path.join(get_ref_genomes_path(), reference)
     compare_cmd = [
         'gdtools', 'ANNOTATE',
@@ -29,6 +29,8 @@ def compare_gdiff(reference, out_file, gdiffs, format='HTML'):
         '-o', out_file,
         '-f', format,
     ] + gdiffs
+    if preserve_evidence:
+        compare_cmd.append('--preserve-evidence')
     subprocess.run(compare_cmd, check=True)
     return out_file
 
@@ -651,6 +653,7 @@ class Breseq:
         self.params = params
         self.params._validate_required()
 
+        self.reference = self.params.reference
         self.reference_path = Path(get_ref_genomes_path()) / self.params.reference
         
         # Compute output folder
@@ -1734,3 +1737,45 @@ class Breseq:
             self.applied_gd_path = str(applied_gd)
 
         return str(out_path)
+
+
+    # def parse_gdiff(self):
+    #     out_file = self.gd_file.replace(".gd", ".json")
+    #     json_path = compare_gdiff(
+    #         self.reference,
+    #         out_file,
+    #         [self.gd_file],
+    #         format='JSON',
+    #         preserve_evidence=True
+    #     )
+        
+    #     with open(json_path, 'r') as f:
+    #         gdiff = json.load(f)
+
+    #     os.remove(json_path)
+
+    #     return gdiff
+
+    
+    def parse_gdiff(self):
+        
+        out_file = self.gd_file.replace(".gd", ".json")
+        
+        if os.path.exists(out_file):
+            with open(out_file, 'r') as f:
+                gdiff = json.load(f)            
+
+        else:
+            json_path = compare_gdiff(
+                self.reference,
+                out_file,
+                [self.gd_file],
+                format='JSON',
+                preserve_evidence=True
+            )
+        
+            with open(json_path, 'r') as f:
+                gdiff = json.load(f)
+
+        return gdiff
+            

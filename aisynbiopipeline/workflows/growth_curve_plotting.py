@@ -172,10 +172,10 @@ def plot_OD_replicates(df, subtract_background=False, blank=False,
                rotation=45, ha='right')
 
     # Secondary x-axis showing transfer numbers
-    df['datetime'] = pd.to_datetime(df['datetime'])
+    # df['datetime'] = pd.to_datetime(df['datetime'])
     transfer_datetimes = df.groupby('transfer')['datetime'].agg("median")
     secax = ax.secondary_xaxis('top')
-    secax.set_xticks(transfer_datetimes, df['transfer'].sort_values().unique())
+    secax.set_xticks(transfer_datetimes, labels=df['transfer'].sort_values().unique())
     secax.set_xlabel('transfer')
 
     # ===== FINALIZE PLOT =====

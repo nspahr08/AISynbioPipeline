@@ -23,8 +23,7 @@ REQUIRED_PROCESSED_DATA_COLUMNS = [
     'datetime', 'Name', 'Experiment', 'Type', 'Condition', 'Strain name',
     'Transforming DNA', 'Protocol', 'Parent sample', 'Replicate samples',
     'Plate name', 'Microtiter plate well', 'Plotting group',
-    'Plotting group name', 'Blank', 'background', 'innoculation_timestamp',
-    'timepoint'
+    'Plotting group name', 'Blank', 'background'#, 'innoculation_timestamp', 'timepoint'
     ]
 
 
@@ -232,7 +231,7 @@ def extract_robotic_od_data_to_df(
     data['datetime'] = data['timestamp'].apply(
         lambda x: datetime.fromtimestamp(x).isoformat()
     )
-    # data['datetime'] = pd.to_datetime(data['datetime'])
+    data['datetime'] = pd.to_datetime(data['datetime'])
 
     return data
 
@@ -262,49 +261,70 @@ def compute_background(df):  # DOUBLE CHECK THAT THIS IS CORRECT!!!
     return df
 
 
-def compute_inoculation(df, first_reading_is_blank=False):
-    """
-    Compute innoculation timestamp based on the oldest timestamp
-    or based on the second oldest timestamp if the first reading
-    was taken before inoculation.
-    Then, using the incoulation timestamp as 0 h reading,
-    compute the timepoint in hours for each timestamp.
-    """
+## FIX:
+# def compute_inoculation(df, first_reading_is_blank=False):
+#     """
+#     Compute innoculation timestamp based on the oldest timestamp
+#     or based on the second oldest timestamp if the first reading
+#     was taken before inoculation.
+#     Then, using the incoulation timestamp as 0 h reading,
+#     compute the timepoint in hours for each timestamp.
+#     """
 
-    def inoc_time_function(x):
-        return x.min()
+#     def inoc_time_function(x):
+#         return x.min()
     
-    if first_reading_is_blank:
-        def inoc_time_function(x):
-            if len(x.drop_duplicates()) == 1:
-                return x.drop_duplicates().iloc[0]
-            else:
-                return x.drop_duplicates().sort_values().iloc[1]
+#     if first_reading_is_blank:
+#         def inoc_time_function(x):
+#             if len(x.drop_duplicates()) == 1:
+#                 return x.drop_duplicates().iloc[0]
+#             else:
+#                 return x.drop_duplicates().sort_values().iloc[1]
     
-    df['innoculation_timestamp'] = pd.NA
-    df.loc[
-        ~(pd.isna(df['transfer'])),
-        'innoculation_timestamp'
-        ] = df.groupby(
-            ['series','plate_index', 'transfer']
-            )['datetime'].transform(inoc_time_function)
+#     df['innoculation_timestamp'] = pd.NA
+#     df.loc[
+#         ~(pd.isna(df['transfer'])),
+#         'innoculation_timestamp'
+#         ] = df.groupby(
+#             ['series','plate_index', 'transfer']
+#             )['datetime'].transform(inoc_time_function)
 
-    def calc_timepoint(time_0, time):
+#     def calc_timepoint(time_0, time):
         
-        if not pd.isna(time_0):
-            timepoint = (
-                datetime.fromisoformat(time) - datetime.fromisoformat(time_0)
-            ).total_seconds()/3600
+#         if not pd.isna(time_0):
+#             timepoint = (
+#                 datetime.fromisoformat(time) - datetime.fromisoformat(time_0)
+#             ).total_seconds()/3600
     
-        else:
-            timepoint = pd.NA
+#         else:
+#             timepoint = pd.NA
     
-        return timepoint
+#         return timepoint
     
-    df['timepoint'] =  df.apply(
-        lambda x: calc_timepoint(x['innoculation_timestamp'], x['datetime']),
-        axis=1
-    )
+#     df['timepoint'] =  df.apply(
+#         lambda x: calc_timepoint(x['innoculation_timestamp'], x['datetime']),
+#         axis=1
+#     )
+
+#     return df
+
+
+def correct_timestamps(df, path_to_ats_folder):
+    # Accurate timestamps become available after completion of the robotic run.
+    ats_df = pd.DataFrame()
+    for filename in os.listdir(path_to_ats_folder):
+        if filename.endswith('.csv'):
+            ats_df = pd.concat([ats_df, pd.read_csv(os.path.join(path_to_ats_folder, filename))])
+
+    # Remove readings files for which there are no accurate timestamps
+    df['file_basename'] = df['filename'].transform(lambda x: os.path.basename(x))
+    df = pd.merge(df, ats_df, left_on='file_basename', right_on='bmg filename', how='outer')
+    df = df.dropna(subset=['bmg filename'])
+    df.drop(columns=['datetime'], inplace=True)
+    
+    df['utc timestamp'].transform(lambda x: datetime.strptime(x, '%Y-%m-%d %H:%M:%S.%f'))
+    df.rename(columns={'utc timestamp': 'datetime'}, inplace=True)
+    df['datetime'] = pd.to_datetime(df['datetime'])
 
     return df
 
