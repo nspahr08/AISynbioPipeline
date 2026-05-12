@@ -29,13 +29,13 @@ def plot_OD_replicates(df, subtract_background=False, blank=False,
     df : pandas.DataFrame
         DataFrame containing OD measurements with required columns:
         - 'Name': Sample identifier
-        - 'Microtiter plate well': Well position (e.g., 'A1', 'B2')
+        - 'Microtiter_plate_well': Well position (e.g., 'A1', 'B2')
         - 'datetime': Timestamp of measurement
         - 'od': Optical density reading
         - 'background': Background OD reading (for subtraction)
         - 'transfer': Transfer number (integer)
-        - 'Plotting group': Group identifier for plot organization
-        - 'Plotting group name': Human-readable group name
+        - 'Plotting_group_number': Group identifier for plot organization
+        - 'Plotting_group_name': Human-readable group name
     subtract_background : bool, default False
         If True, subtract background OD readings from all measurements
     blank : bool, default False
@@ -63,7 +63,7 @@ def plot_OD_replicates(df, subtract_background=False, blank=False,
     """
 
     # ===== DATA VALIDATION =====
-    if len(df.groupby(['Plotting group', 'Plotting group name'])) > 1:
+    if len(df.groupby(['Plotting_group_number', 'Plotting_group_name'])) > 1:
         raise ValueError(
             f"There appear to be multiple plotting groups in dataframe. "
             f"Ensure that you want all these samples in one graph: "
@@ -81,22 +81,22 @@ def plot_OD_replicates(df, subtract_background=False, blank=False,
     # ===== SAMPLE DEFINITION AND STYLING =====
     if blank:
         # For blank data: samples are unique wells, labeled by well name
-        samples = (df[['Microtiter plate well']]
+        samples = (df[['Microtiter_plate_well']]
                    .drop_duplicates()
                    .dropna()
-                   .sort_values('Microtiter plate well'))
-        samples['label'] = samples['Microtiter plate well']
+                   .sort_values('Microtiter_plate_well'))
+        samples['label'] = samples['Microtiter_plate_well']
         # Use extended tab20 colormap for blank wells
         colors = colormaps['tab20'].colors * 3
         samples['color'] = colors[:len(samples)]
     else:
         # For experimental data: samples are Name + well combinations
-        samples = (df[['Name', 'Microtiter plate well']]
+        samples = (df[['Name', 'Microtiter_plate_well']]
                    .drop_duplicates()
                    .dropna()
                    .sort_values('Name'))
         samples['label'] = (samples['Name'] + " (" +
-                             samples['Microtiter plate well'] + ")")
+                             samples['Microtiter_plate_well'] + ")")
         # Use basic colors plus tab20 for experimental samples
         colors = (["blue", "red", "pink", "green", "gray", "brown", "orange", "cyan"] +
                   list(colormaps['tab20'].colors))
@@ -121,7 +121,7 @@ def plot_OD_replicates(df, subtract_background=False, blank=False,
             if blank:
                 # For blank data: filter by well only
                 sample_data = df.loc[
-                    (df['Microtiter plate well'] == sample['Microtiter plate well']) &
+                    (df['Microtiter_plate_well'] == sample['Microtiter_plate_well']) &
                     (df['transfer'] == transfer_num)
                 ].sort_values('datetime')
             else:

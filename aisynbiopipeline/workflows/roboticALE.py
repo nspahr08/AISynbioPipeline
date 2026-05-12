@@ -12,18 +12,18 @@ from datetime import datetime
 
 PLATE_WELLS = [f"{row}{col}" for row in "ABCDEFGH" for col in range(1, 13)]
 REQUIRED_PLATE_LAYOUT_COLUMNS = [
-    'Name', 'Experiment', 'Type', 'Condition', 'Strain name',
-    'Transforming DNA', 'Protocol', 'Parent sample', 'Replicate samples',
-    'Plate name', 'Microtiter plate well', 'Plotting group',
-    'Plotting group name', 'Blank'
+    'Name', 'Experiment', 'Type', 'Condition', 'Strain_name',
+    'Transforming_DNA', 'Protocol', 'Parent_sample', 'Replicate_samples',
+    'Plate_name', 'Microtiter_plate_well', 'Plotting_group_number',
+    'Plotting_group_name', 'Blank'
 ]
 REQUIRED_PROCESSED_DATA_COLUMNS = [
     'filename', 'experiment', 'file_ID', 'timestamp', 'series',
     'plate_index', 'transfer', 'reading', 'row', 'column', 'od', 'well',
-    'datetime', 'Name', 'Experiment', 'Type', 'Condition', 'Strain name',
-    'Transforming DNA', 'Protocol', 'Parent sample', 'Replicate samples',
-    'Plate name', 'Microtiter plate well', 'Plotting group',
-    'Plotting group name', 'Blank', 'background'#, 'innoculation_timestamp', 'timepoint'
+    'datetime', 'Name', 'Experiment', 'Type', 'Condition', 'Strain_name',
+    'Transforming_DNA', 'Protocol', 'Parent_sample', 'Replicate_samples',
+    'Plate_name', 'Microtiter_plate_well', 'Plotting_group_number',
+    'Plotting_group_name', 'Blank', 'background'#, 'innoculation_timestamp', 'timepoint'
     ]
 
 
@@ -56,12 +56,12 @@ def load_and_verify_plate_layout(path, write_to=None):
         raise ValueError(f"Missing required columns: {missing_columns}")
     
     # Check that all well values are valid
-    invalid_wells = set(df['Microtiter plate well']) - set(PLATE_WELLS)
+    invalid_wells = set(df['Microtiter_plate_well']) - set(PLATE_WELLS)
     if invalid_wells:
         raise ValueError(f"Invalid well coordinates found: {sorted(invalid_wells)}")
     
-    # Verify each unique 'Plate name' has 96 unique well coordinates
-    wells_per_plate = df.groupby('Plate name')['Microtiter plate well'].nunique()
+    # Verify each unique 'Plate_name' has 96 unique well coordinates
+    wells_per_plate = df.groupby('Plate_name')['Microtiter_plate_well'].nunique()
     invalid_plates = wells_per_plate[wells_per_plate != 96]
     if len(invalid_plates) > 0:
         raise ValueError(
@@ -69,19 +69,19 @@ def load_and_verify_plate_layout(path, write_to=None):
             f"{invalid_plates.to_dict()}"
         )
     
-    # Verify each 'Plate name'-'Microtiter plate well' combination occurs only once
-    plate_well_combo = df.groupby(['Plate name', 'Microtiter plate well']).size()
+    # Verify each 'Plate_name'-'Microtiter_plate_well' combination occurs only once
+    plate_well_combo = df.groupby(['Plate_name', 'Microtiter_plate_well']).size()
     duplicates = plate_well_combo[plate_well_combo > 1]
     if len(duplicates) > 0:
         raise ValueError(
-            f"Duplicate 'Plate name'-'Microtiter plate well' combinations found: "
+            f"Duplicate 'Plate_name'-'Microtiter_plate_well' combinations found: "
             f"{duplicates.to_dict()}"
         )
     
-    # Verify each unique 'Name' has a unique 'Plate name'-'Microtiter plate well' combination
-    name_location = df.groupby('Name')[['Plate name', 'Microtiter plate well']].nunique()
+    # Verify each unique 'Name' has a unique 'Plate_name'-'Microtiter_plate_well' combination
+    name_location = df.groupby('Name')[['Plate_name', 'Microtiter_plate_well']].nunique()
     duplicates_by_name = name_location[
-        (name_location['Plate name'] > 1) | (name_location['Microtiter plate well'] > 1)
+        (name_location['Plate_name'] > 1) | (name_location['Microtiter_plate_well'] > 1)
     ]
     if len(duplicates_by_name) > 0:
         raise ValueError(
@@ -240,7 +240,7 @@ def map_plate_layout_to_data(robotic_od_data_df, verified_plate_layout_df):
     df = robotic_od_data_df.merge(
         verified_plate_layout_df,
         left_on=['series', 'well'],
-        right_on=['Plate name', 'Microtiter plate well'],
+        right_on=['Plate_name', 'Microtiter_plate_well'],
         how='left'
         )
     return df
@@ -255,7 +255,7 @@ def compute_background(df):  # DOUBLE CHECK THAT THIS IS CORRECT!!!
     df['background'] = df.groupby(
         ['experiment', 'series', 'plate_index', 'timestamp']
         )['od'].transform(
-        lambda x: x[df.loc[x.index, 'Strain name'].isna()].mean()
+        lambda x: x[df.loc[x.index, 'Strain_name'].isna()].mean()
         )
     
     return df
