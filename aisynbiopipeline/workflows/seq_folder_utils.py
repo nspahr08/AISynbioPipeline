@@ -264,12 +264,12 @@ class Library:
             if self.platform == 'Illumina':
                 # Look for _R1, _R2, _1, _2 patterns
                 if '_R1' in base_name or '_1' in base_name:
-                    sample_name = base_name.replace('_R1', '').replace('_1', '').rstrip('_').replace('_illumina', '')
+                    sample_name = base_name.replace('_R1', '').replace('_1', '').rstrip('_').replace('_illumina', '').replace('_trimmed', "")
                     if sample_name not in samples_dict:
                         samples_dict[sample_name] = {'sample_name': sample_name, 'R1': None, 'R2': None}
                     samples_dict[sample_name]['R1'] = str(fastq_file)
                 elif '_R2' in base_name or '_2' in base_name:
-                    sample_name = base_name.replace('_R2', '').replace('_2', '').rstrip('_').replace('_illumina', '')
+                    sample_name = base_name.replace('_R2', '').replace('_2', '').rstrip('_').replace('_illumina', '').replace('_trimmed', "")
                     if sample_name not in samples_dict:
                         samples_dict[sample_name] = {'sample_name': sample_name, 'R1': None, 'R2': None}
                     samples_dict[sample_name]['R2'] = str(fastq_file)

@@ -690,12 +690,13 @@ class Breseq:
         """
         output_folder = Path(output_folder)
         
-        # Find log.txt (could be in output/ subfolder or directly in output_folder)
+        # Find log.txt
         log_path = output_folder / 'output' / 'log.txt'
-        if not log_path.exists():
-            log_path = output_folder / 'log.txt'
-        if not log_path.exists():
-            raise FileNotFoundError(f"Could not find log.txt in {output_folder}")
+
+        # Find output.done
+        done_path = output_folder / 'output' / 'output.done'
+        if not done_path.exists():
+            raise FileNotFoundError(f"Could not find output.done in {output_folder}")
         
         # summary.json is stored under data/ for this run
         summary_path = output_folder / 'data' / 'summary.json'
@@ -1738,24 +1739,6 @@ class Breseq:
 
         return str(out_path)
 
-
-    # def parse_gdiff(self):
-    #     out_file = self.gd_file.replace(".gd", ".json")
-    #     json_path = compare_gdiff(
-    #         self.reference,
-    #         out_file,
-    #         [self.gd_file],
-    #         format='JSON',
-    #         preserve_evidence=True
-    #     )
-        
-    #     with open(json_path, 'r') as f:
-    #         gdiff = json.load(f)
-
-    #     os.remove(json_path)
-
-    #     return gdiff
-
     
     def parse_gdiff(self):
         
@@ -1778,4 +1761,15 @@ class Breseq:
                 gdiff = json.load(f)
 
         return gdiff
-            
+
+    
+    def delete(self):
+
+        shutil.rmtree(self.output_folder)
+        self.exists = False
+
+        registry = self._load_registry()
+        registry.pop(self.output_folder)
+        self._save_registry(registry)
+        
+        print(f"{self.output_folder} has been deleted and {self.params.version_name} has been removed from this sample's breseq params registry.")
