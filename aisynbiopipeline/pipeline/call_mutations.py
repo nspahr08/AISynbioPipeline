@@ -203,7 +203,7 @@ def main():
     # copy multiqc to analysis home and upload to drive
     analysis_dir = ANALYSIS_HOME_ROOT / seqorder_name
     analysis_dir.mkdir(parents=True, exist_ok=True)
-    dest_multiqc = analysis_dir / Path(multiqc_report).name
+    dest_multiqc = analysis_dir / seqorder_name + '_trimmed_multiqc_report.html'
     shutil.copy2(multiqc_report, dest_multiqc)
     logger.info('Copied MultiQC report to %s', dest_multiqc)
 

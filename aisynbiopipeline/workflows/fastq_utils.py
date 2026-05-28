@@ -48,6 +48,9 @@ def parse_illumina_fastq_filename(filepath: str) -> tuple[str, str]:
 
 
 def create_manifest(folder: str, platform: str = 'illumina') -> pd.DataFrame:
+
+    if not os.path.exists(folder):
+        raise FileNotFoundError(f'Folder missing: {folder}')
     
     if platform == 'illumina':
         files = glob.glob(os.path.join(folder, '*.fastq*'))
@@ -127,6 +130,23 @@ def create_manifest(folder: str, platform: str = 'illumina') -> pd.DataFrame:
             if file.endswith('_R1.fastq.gz') or file.endswith('_R1_trimmed.fastq.gz'):
                 sample_files[sample_name]['fwd_fastq'] = file
             elif file.endswith('_R2.fastq.gz') or file.endswith('_R2_trimmed.fastq.gz'):
+                sample_files[sample_name]['rvs_fastq'] = file
+        data = list(sample_files.values())
+        manifest = pd.DataFrame(data)
+        return manifest.sort_values('sample_name').reset_index(drop=True)
+
+    elif platform == 'seqcenter_illumina':
+        data = []
+        files = glob.glob(os.path.join(folder, '*.fastq.gz'))
+        sample_files = {}
+        for file in files:
+            basename = os.path.basename(file)
+            sample_name = basename.split('_S')[0]
+            if sample_name not in sample_files:
+                sample_files[sample_name] = {'sample_name': sample_name}
+            if '_R1' in file:
+                sample_files[sample_name]['fwd_fastq'] = file
+            elif '_R2' in file:
                 sample_files[sample_name]['rvs_fastq'] = file
         data = list(sample_files.values())
         manifest = pd.DataFrame(data)
