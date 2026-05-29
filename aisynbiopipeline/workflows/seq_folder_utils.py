@@ -512,6 +512,7 @@ class SeqSample:
         
         print(f"All associated files and folders of SeqSample {self.sample_name} were copied to {dst_seqorder.path}. Relative file paths were preserved.")
         dst_library = Library(dst_seqorder, self.library.platform, name=self.library.name)
+        dst_library.rename(dst_seqorder.name + "_" + self.library.platform)
         new_seqsample = SeqSample(dst_library, self.sample_name)
         
         return new_seqsample

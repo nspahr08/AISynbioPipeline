@@ -14,6 +14,7 @@ from celery import Celery
 from aisynbiopipeline.workflows.breseq import Breseq_params, Breseq
 from typing import List
 from kombu import Exchange, Queue
+from traceback import format_tb
 
 QUEUE = 'breseq'
 
@@ -114,9 +115,17 @@ def breseq(self,
         print(breseq.params.version_name)
         breseq.run()
         result = norm(breseq.output_folder)
-    except Exception as e:
-        self.update_state(state=states.FAILURE, meta={"error": str(e)})
-        raise
+    except Exception as exc:
+        self.update_state(
+            state=states.FAILURE,
+            meta={
+                # "error": str(e)
+                'exc_type': type(exc).__name__,
+                'exc_message': str(exc),
+                'traceback': format_tb(exc.__traceback__),
+            }
+        )
+        raise exc
 
     return {"status": "success", "output": result}
 

@@ -108,7 +108,7 @@ def fastp(self,
         )
     except Exception as e:
         self.update_state(state=states.FAILURE, meta={"error": str(e)})
-        raise
+        raise e
 
     return {"status": "success", "output": result}
 
