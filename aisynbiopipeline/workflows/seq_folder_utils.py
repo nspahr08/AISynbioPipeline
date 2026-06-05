@@ -184,7 +184,7 @@ class Library:
     
     def create_subfolder(self, subfolder: str):
         """Create subfolder."""
-        acceptable = ['received', 'trimmed', 'breseq', 'mapped', 'filtered']
+        acceptable = ['received', 'trimmed', 'breseq', 'mapped', 'filtered', 'extract_barcodes']
         if subfolder not in acceptable:
             raise ValueError(
                 f"Subfolder name must be among this list: {acceptable}."

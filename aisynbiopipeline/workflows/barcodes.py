@@ -1,15 +1,4 @@
-#!/usr/bin/env python3
-"""Amplicon barcode extractor for Illumina trimmed reads.
-
-Usage:
-  amplicons.py <seqorder> <barcode_csv> [fnames_must_contain]
-
-This script scans trimmed Illumina FASTQ files for anchor sequences,
-recovery barcode pairs (verA, verB) using a barcode CSV, and writes
-per-read results to a CSV in the analysis folder for the seqorder.
-Only processes fastq files containing the optional fnames_must_contain string.
-
-Output CSV columns: sample_name, read_id, verA, verB
+"""Barcode extraction functions
 """
 
 from __future__ import annotations
@@ -25,33 +14,10 @@ import gzip
 from Bio import SeqIO
 from Bio.Seq import Seq
 
-# Anchor sequences (kept from original script)
+
 ANCHOR_B_BEFORE = "GCGGAAAGTGTGAGGCGCTT".upper()
 ANCHOR_BETWEEN = "CGGC".upper()
 ANCHOR_A_AFTER = "CTCTAGAAATAATTTTGTTT".upper()
-
-ANALYSIS_HOME_ROOT = Path('/storage/nspahr/lib_analysis')
-LOG_FILE = Path(__file__).resolve().parent / 'pipeline.log'
-
-
-def configure_logging():
-    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    LOG_FILE.touch(exist_ok=True)
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s %(levelname)s %(message)s',
-        handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler()],
-    )
-    return logging.getLogger(__name__)
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description='Extract amplicon barcodes from trimmed reads')
-    parser.add_argument('seqorder', help='Sequencing order name')
-    parser.add_argument('barcode_csv', help='CSV with barcodes (columns: feature_type, feature_number, feature_name, barcode)')
-    parser.add_argument('fnames_must_contain', nargs='?', default=None, help='Optional string to filter fastq filenames; only files containing this string are processed')
-    return parser.parse_args()
-
 
 def reverse_complement(seq: str) -> str:
     return str(Seq(seq).reverse_complement())
@@ -138,16 +104,16 @@ def process_fastq(
     barcodes_A: Dict[str, str],
     barcodes_B: Dict[str, str],
     extract_dir: Path,
-    logger: logging.Logger,
 ) -> list[dict]:
+    fq = Path(fq) if type(fq)==str else fq
     fname = fq.name
+    extract_dir = Path(extract_dir) if type(extract_dir)==str else extract_dir
     sample_name = fname.replace('.fastq.gz', '').replace('.fq.gz', '').replace('.fastq', '').replace('.fq', '').replace('_R1', '').replace('_1', '').replace('_illumina', '').replace('_trimmed', "").replace('_R2', '').replace('_2', '').rstrip('_')
     total_reads = 0
     anchors_found = 0
     matched_records = []
     matched_reads = []
 
-    logger.info('Processing sample %s', fname)
     try:
         if str(fq).endswith('.gz'):
             handle = gzip.open(str(fq), 'rt')
@@ -170,13 +136,9 @@ def process_fastq(
                     }
                     matched_records.append(record)
                     matched_reads.append(rec)
-                if total_reads % 1000000 == 0:
-                    logger.info('  Processed %d reads for file %s', total_reads, fname)
     except Exception as exc:
-        logger.error('Failed processing fastq %s: %s', fq, exc)
         raise
 
-    logger.info('Sample %s: total_reads=%d anchors_found=%d', sample_name, total_reads, anchors_found)
 
     if matched_reads:
         output_fastq = append_suffix_to_filename(extract_dir / fname, '_BCextracted')
@@ -184,69 +146,5 @@ def process_fastq(
         output_csv = extract_dir / f'{csv_base}_BCextracted.csv'
         SeqIO.write(matched_reads, str(output_fastq), 'fastq')
         pd.DataFrame.from_records(matched_records).to_csv(output_csv, index=False)
-        logger.info('Wrote %d extracted reads to %s and records to %s', len(matched_reads), output_fastq, output_csv)
 
     return matched_records
-
-
-def main():
-    args = parse_args()
-    logger = configure_logging()
-    logger.info('Starting amplicons extraction for seqorder %s', args.seqorder)
-
-    seqorder = args.seqorder
-    barcode_csv = args.barcode_csv
-    fnames_filter = args.fnames_must_contain
-
-    seqorder_obj = None
-    try:
-        from aisynbiopipeline.workflows.seq_folder_utils import SeqOrder, Library
-        seqorder_obj = SeqOrder(seqorder)
-        illumina = Library(seqorder_obj, 'Illumina')
-    except Exception as exc:
-        logger.error('Failed to load seqorder/illumina library: %s', exc)
-        raise
-
-    extract_dir = illumina.path / 'extract_barcodes'
-    if not extract_dir.exists() or not extract_dir.is_dir():
-        raise FileNotFoundError(f'Expected extract_barcodes folder missing under library path: {extract_dir}')
-
-    trimmed = illumina.path / 'trimmed'
-    if not trimmed.exists():
-        raise FileNotFoundError(f'Trimmed folder not found: {trimmed}')
-
-    fastq_files = sorted(trimmed.glob('*.fastq*'))
-    if fnames_filter:
-        fastq_files = [f for f in fastq_files if fnames_filter in f.name]
-    if not fastq_files:
-        raise FileNotFoundError(f'No fastq files found in trimmed folder: {trimmed}')
-
-    logger.info('Found %d fastq files in %s', len(fastq_files), trimmed)
-
-    # load barcodes
-    try:
-        barcodes_A, barcodes_B = load_barcodes(barcode_csv)
-    except Exception as exc:
-        logger.error('Failed to load barcode CSV: %s', exc)
-        raise
-
-    logger.info('Loaded %d A barcodes and %d B barcodes', len(barcodes_A), len(barcodes_B))
-
-    records = []
-    for fq in fastq_files:
-        records.extend(process_fastq(fq, barcodes_A, barcodes_B, extract_dir, logger))
-
-    # write results to analysis folder
-    analysis_dir = ANALYSIS_HOME_ROOT / seqorder
-    analysis_dir.mkdir(parents=True, exist_ok=True)
-    out_suffix = f"_{fnames_filter}" if fnames_filter else ""
-    out_csv = analysis_dir / f"{seqorder}{out_suffix}_amplicons_reads.csv"
-
-    df = pd.DataFrame.from_records(records)
-    df.to_csv(out_csv, index=False)
-    logger.info('Wrote %d records to %s', len(df), out_csv)
-    logger.info('Amplicon extraction completed for seqorder %s', seqorder)
-
-
-if __name__ == '__main__':
-    main()
