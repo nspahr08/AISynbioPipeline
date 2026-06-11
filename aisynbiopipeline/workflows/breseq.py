@@ -19,6 +19,7 @@ import csv
 import zlib
 import base64
 from aisynbiopipeline.workflows.reference_utils import get_ref_genomes_path
+import shutil
 
 
 def compare_gdiff(reference, out_file, gdiffs, format='HTML', preserve_evidence=False):
@@ -1765,11 +1766,10 @@ class Breseq:
     
     def delete(self):
 
-        shutil.rmtree(self.output_folder)
-        self.exists = False
-
         registry = self._load_registry()
         registry.pop(self.output_folder)
         self._save_registry(registry)
+        shutil.rmtree(self.output_folder)
+        self.exists = False
         
         print(f"{self.output_folder} has been deleted and {self.params.version_name} has been removed from this sample's breseq params registry.")

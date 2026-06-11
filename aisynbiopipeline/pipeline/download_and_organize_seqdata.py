@@ -12,19 +12,23 @@ controlled by the optional --platform argument.
 
 from __future__ import annotations
 
+import sys
 import argparse
 import logging
 import os
 import shutil
 from pathlib import Path
 
-from aisynbiopipeline.workflows.plasmidsaurus import (
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from workflows.plasmidsaurus import (
     create_seqorder_name,
     download_results,
     get_access_token,
     get_credentials,
 )
-from aisynbiopipeline.workflows.seq_folder_utils import Library, SeqOrder
+from workflows.seq_folder_utils import Library, SeqOrder
 
 DOWNLOAD_ROOT = Path('/storage/synbio/ai_synbio_data/experimental_data/downloads')
 ANALYSIS_HOME_ROOT = Path('/storage/nspahr/lib_analysis')

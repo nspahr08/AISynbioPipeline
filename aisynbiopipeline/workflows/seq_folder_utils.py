@@ -485,7 +485,8 @@ class SeqSample:
         
         # Rename fastq files in filtered folder (Nanopore)
         if self.library.platform == 'Nanopore':
-            self._rename_fastq_files('filtered', old_name, new_name)
+            if self.library.path / 'Nanopore'.exists():
+                self._rename_fastq_files('filtered', old_name, new_name)
         
         self.sample_name = new_name
 

@@ -171,6 +171,46 @@ class DatabaseManager:
             conn.rollback()
             raise Exception(f"Failed to add column '{column_name}' to table '{table_name}': {e}")
 
+    def drop_table(self, table_name: str) -> None:
+        """
+        Drop a table from the database.
+
+        Args:
+            table_name: Name of the table to drop
+
+        Raises:
+            Exception: If table drop fails
+        """
+        conn = self.get_connection()
+
+        try:
+            conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to drop table '{table_name}': {e}")
+
+    def rename_column(self, table_name: str, old_column_name: str, new_column_name: str) -> None:
+        """
+        Rename a column in a table.
+
+        Args:
+            table_name: Name of the table
+            old_column_name: Current column name
+            new_column_name: New column name
+
+        Raises:
+            Exception: If column rename fails
+        """
+        conn = self.get_connection()
+
+        try:
+            conn.execute(f'ALTER TABLE "{table_name}" RENAME COLUMN "{old_column_name}" TO "{new_column_name}"')
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to rename column '{old_column_name}' to '{new_column_name}' in table '{table_name}': {e}")
+    
     def sync_schema(self, table_name: str, sheet_schema: Dict[str, str]) -> None:
         """
         Synchronize table schema with Google Sheets schema.
