@@ -8,13 +8,42 @@ import pysam
 from pathlib import Path
 
 
-def map_reads(fwd_reads, rvs_reads, reference, output_dir, keep_index=False, index_dir=None, sample_name=None):
+def map_reads(fwd_reads, reference, output_dir, rvs_reads=None, keep_index=False, index_dir=None, sample_name=None):
+    
+    if not Path(reference).exists():
+        raise FileNotFoundError(
+                f"Reference file does not exist: {reference}.")
+
+    os.makedirs(output_dir, exist_ok=True)
+    
     temp_dir = tempfile.mkdtemp()
-    if keep_index:
-        bt2_index = index_reference(reference, index_dir=index_dir)
+    bt2_index = None
+    # If an index directory was provided, check for an existing index there first
+    if index_dir:
+        os.makedirs(index_dir, exist_ok=True)
+        prefix = os.path.join(index_dir, 'reference')
+        # Look for any files that start with the index prefix (bowtie2 index files)
+        from glob import glob
+        existing = len(glob(prefix + '*')) > 0
+        if existing:
+            print(f"Found existing bowtie2 index in {index_dir}, using it.")
+            bt2_index = prefix
+        else:
+            # No existing index in index_dir: create one there if user asked to keep,
+            # otherwise create in a temporary directory
+            if keep_index:
+                bt2_index = index_reference(reference, index_dir=index_dir)
+            else:
+                bt2_index = index_reference(reference, index_dir=temp_dir)
     else:
-        bt2_index = index_reference(reference, index_dir=temp_dir)
-    sam_file = map_to_indexed_ref(fwd_reads, rvs_reads, bt2_index, output_dir, sample_name=sample_name)
+        # No index_dir provided: create index in temp or in place per keep_index
+        if keep_index:
+            # keep_index requested but no index_dir given: create in temp_dir but warn
+            print("keep_index=True but no index_dir provided; creating index in temporary dir.")
+            bt2_index = index_reference(reference, index_dir=temp_dir)
+        else:
+            bt2_index = index_reference(reference, index_dir=temp_dir)
+    sam_file = map_to_indexed_ref(fwd_reads, bt2_index, output_dir, rvs_reads=rvs_reads, sample_name=sample_name)
     bam_file = sort_and_index_bam(sam_file)
     if temp_dir and os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
@@ -22,6 +51,8 @@ def map_reads(fwd_reads, rvs_reads, reference, output_dir, keep_index=False, ind
 
 
 def index_reference(reference: str, index_dir):
+    # Ensure index directory exists
+    os.makedirs(index_dir, exist_ok=True)
     print(f"Building bowtie2 index in {index_dir} from reference {reference}")
     # Determine file type
     ref_ext = os.path.splitext(reference)[1].lower()
@@ -37,28 +68,36 @@ def index_reference(reference: str, index_dir):
 
 
 def map_to_indexed_ref(
-        fwd_reads, rvs_reads, bowtie2_index, output_dir, sample_name='output'):
+        fwd_reads, bowtie2_index, output_dir, rvs_reads=None, sample_name='output'):
     """
     Map reads to an indexed reference using bowtie2.
     
     Args:
         fwd_reads: Forward reads file path(s), single or list
-        rvs_reads: Reverse reads file path(s), single or list
         bowtie2_index: Path to bowtie2 index (prefix only)
         output_dir: Directory for output files
+        rvs_reads: Reverse reads file path(s), single or list. If None, treats fwd_reads as unpaired.
         sample_name: Prefix for output files
     """
     # Convert inputs to lists if they're strings
     if isinstance(fwd_reads, str):
         fwd_reads = [fwd_reads]
-    if isinstance(rvs_reads, str):
+    if rvs_reads is not None and isinstance(rvs_reads, str):
         rvs_reads = [rvs_reads]
+    
+    # Validate read file counts
+    if rvs_reads is not None:
+        if len(fwd_reads) != len(rvs_reads):
+            raise ValueError("Number of forward and reverse read files must match")
+        read_type = "paired-end"
+    else:
+        read_type = "unpaired (single-end)"
         
-    # Ensure equal number of forward and reverse read files
-    if len(fwd_reads) != len(rvs_reads):
-        raise ValueError("Number of forward and reverse read files must match")
-        
-    print(f"Mapping {fwd_reads} and {rvs_reads} to reference {bowtie2_index}")
+    print(f"Mapping {read_type} reads to reference {bowtie2_index}")
+    print(f"  Forward: {fwd_reads}")
+    if rvs_reads:
+        print(f"  Reverse: {rvs_reads}")
+    
     output_sam = os.path.join(output_dir, sample_name + '.sam')
     log_file = os.path.join(output_dir, sample_name + '_bowtie2.log')
     
@@ -66,10 +105,23 @@ def map_to_indexed_ref(
     cmd = [
         'bowtie2',
         '-x', bowtie2_index,
-        '-1', ','.join(fwd_reads),  # bowtie2 accepts comma-separated lists
-        '-2', ','.join(rvs_reads),
-        '-S', output_sam
     ]
+    
+    if rvs_reads:
+        # Paired-end reads
+        cmd.extend([
+            '-1', ','.join(fwd_reads),  # bowtie2 accepts comma-separated lists
+            '-2', ','.join(rvs_reads),
+        ])
+    else:
+        # Unpaired reads
+        cmd.extend([
+            '-U', ','.join(fwd_reads),
+        ])
+    
+    cmd.extend([
+        '-S', output_sam
+    ])
     
     with open(log_file, 'w') as log_fh:
         subprocess.run(cmd, check=True, stderr=log_fh)
@@ -174,24 +226,25 @@ def run_fadu(bam_file, reference_file, output_dir, fadu_folder=None):
 
 def map_and_feature_count(
         fwd_reads,
-        rvs_reads,
         reference,
         output_dir,
+        rvs_reads=None,
         keep_index=False,
         index_dir=None,
         sample_name=None,
         fadu_folder=None):
     """
     Maps reads to a reference and performs feature counting using FADU.
+    Supports both paired-end and unpaired (single-end) reads.
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
     bam_file = map_reads(
         fwd_reads,
-        rvs_reads,
         reference,
         output_dir,
+        rvs_reads=rvs_reads,
         keep_index=keep_index,
         index_dir=index_dir,
         sample_name=sample_name

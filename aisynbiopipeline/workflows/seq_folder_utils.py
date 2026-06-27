@@ -184,13 +184,15 @@ class Library:
     
     def create_subfolder(self, subfolder: str):
         """Create subfolder."""
-        acceptable = ['received', 'trimmed', 'breseq', 'mapped', 'filtered', 'extract_barcodes']
+        acceptable = ['received', 'trimmed', 'breseq', 'mapped', 'filtered', 'barcode_extracted']
         if subfolder not in acceptable:
             raise ValueError(
                 f"Subfolder name must be among this list: {acceptable}."
             )
+        subfolder_path = (self.path / subfolder)
+        subfolder_path.mkdir(exist_ok=True)
 
-        (self.path / subfolder).mkdir(exist_ok=True)
+        return subfolder_path
     
     # def delete(self):
     #     """Delete the library folder and all its contents."""
@@ -262,14 +264,14 @@ class Library:
             
             # Check for paired-end indicators
             if self.platform == 'Illumina':
-                # Look for _R1, _R2, _1, _2 patterns
-                if '_R1' in base_name or '_1' in base_name:
-                    sample_name = base_name.replace('_R1', '').replace('_1', '').rstrip('_').replace('_illumina', '').replace('_trimmed', "")
+                # Look for _R1, _R2, patterns
+                if '_R1' in base_name:
+                    sample_name = base_name.replace('_R1', '').rstrip('_').replace('_illumina', '').replace('_trimmed', "")
                     if sample_name not in samples_dict:
                         samples_dict[sample_name] = {'sample_name': sample_name, 'R1': None, 'R2': None}
                     samples_dict[sample_name]['R1'] = str(fastq_file)
-                elif '_R2' in base_name or '_2' in base_name:
-                    sample_name = base_name.replace('_R2', '').replace('_2', '').rstrip('_').replace('_illumina', '').replace('_trimmed', "")
+                elif '_R2' in base_name:
+                    sample_name = base_name.replace('_R2', '').rstrip('_').replace('_illumina', '').replace('_trimmed', "")
                     if sample_name not in samples_dict:
                         samples_dict[sample_name] = {'sample_name': sample_name, 'R1': None, 'R2': None}
                     samples_dict[sample_name]['R2'] = str(fastq_file)
@@ -485,7 +487,7 @@ class SeqSample:
         
         # Rename fastq files in filtered folder (Nanopore)
         if self.library.platform == 'Nanopore':
-            if self.library.path / 'Nanopore'.exists():
+            if (self.library.path/'filtered').exists():
                 self._rename_fastq_files('filtered', old_name, new_name)
         
         self.sample_name = new_name
@@ -526,7 +528,7 @@ class SeqSample:
             return
         
         # Find all fastq files with the old sample name
-        pattern = f"{old_name}*.fastq*"
+        pattern = f"{old_name}.fastq*"
         fastq_files = folder_path.glob(pattern)
         
         for fastq_file in fastq_files:

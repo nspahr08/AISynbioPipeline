@@ -41,14 +41,15 @@ def run_fastp(path_to_fwd, path_to_rev, path_to_fwd_out, path_to_rev_out, thread
 
 
 def run_filtlong(input_fastq, output_dir, min_length=1000, keep_percent=90):
-    outfile = os.path.basename(input_fastq).replace('.fastq.gz', '_filtered.fastq.gz')
+    outfile = os.path.basename(input_fastq).replace('.fastq.gz', '_filtered.fastq.gz').replace('.fastq', '_filtered.fastq.gz')
     outfile_path = os.path.join(output_dir, outfile)
-    log_file = os.path.join(output_dir, os.path.basename(input_fastq).replace('.fastq.gz', '_filtlong.log'))
+    log_file = os.path.join(output_dir, os.path.basename(input_fastq).replace('.fastq.gz', '_filtlong.log').replace('.fastq', '_filtlong.log'))
 
     filtlong_cmd = [
         'filtlong',
         '--min_length', str(min_length),
         '--keep_percent', str(keep_percent),
+        '--verbose',
         input_fastq
     ]
 
@@ -64,6 +65,7 @@ def run_filtlong(input_fastq, output_dir, min_length=1000, keep_percent=90):
         gzip_proc = subprocess.Popen(['gzip'], stdin=filtlong_proc.stdout, stdout=out_f)
         filtlong_proc.stdout.close()  # Allow filtlong_proc to receive a SIGPIPE if gzip_proc exits.
         gzip_proc.communicate()
+        
 
     return outfile_path
 
@@ -84,9 +86,9 @@ def run_multiqc(folder, output_dir=None):
     multiqc_cmd = [
         'multiqc',
         folder,
-        '--force'
+        '--force',
     ]
     output_dir = folder if output_dir is None else output_dir
     subprocess.run(multiqc_cmd, cwd=output_dir)
 
-    return os.path.join(folder, 'multiqc_report.html')
+    return os.path.join(output_dir, 'multiqc_report.html')

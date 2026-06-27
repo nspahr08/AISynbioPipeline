@@ -19,16 +19,16 @@ import os
 import shutil
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Add workspace root to path so aisynbiopipeline can be imported
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from workflows.plasmidsaurus import (
+from aisynbiopipeline.workflows.plasmidsaurus import (
     create_seqorder_name,
     download_results,
     get_access_token,
     get_credentials,
 )
-from workflows.seq_folder_utils import Library, SeqOrder
+from aisynbiopipeline.workflows.seq_folder_utils import Library, SeqOrder
 
 DOWNLOAD_ROOT = Path('/storage/synbio/ai_synbio_data/experimental_data/downloads')
 ANALYSIS_HOME_ROOT = Path('/storage/nspahr/lib_analysis')
@@ -137,14 +137,14 @@ def main() -> None:
     long_library = Library(seqorder, 'Nanopore', create=True) if platform in ('hybrid', 'nanopore') else None
 
     if platform == 'hybrid':
-        illumina_count = copy_reads_to_library(reads_folder, short_library, '*illumina*.fastq.gz', logger)
-        nanopore_count = copy_reads_to_library(reads_folder, long_library, '*nanopore*.fastq.gz', logger)
+        illumina_count = copy_reads_to_library(reads_folder, short_library, '*illumina*.fastq', logger)
+        nanopore_count = copy_reads_to_library(reads_folder, long_library, '*nanopore*.fastq', logger)
     elif platform == 'illumina':
-        illumina_count = copy_reads_to_library(reads_folder, short_library, '*.fastq.gz', logger)
+        illumina_count = copy_reads_to_library(reads_folder, short_library, '*.fastq', logger)
         nanopore_count = 0
     else:
         illumina_count = 0
-        nanopore_count = copy_reads_to_library(reads_folder, long_library, '*.fastq.gz', logger)
+        nanopore_count = copy_reads_to_library(reads_folder, long_library, '*.fastq', logger)
 
     logger.info('Finished organizing fastq files for %s', item_code)
     logger.info('Illumina files copied: %s', illumina_count)

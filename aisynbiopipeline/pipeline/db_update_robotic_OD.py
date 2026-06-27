@@ -115,10 +115,8 @@ def main():
         'Microtiter_plate_name': 'TEXT',
         'Microtiter_plate_well': 'TEXT',
         'background': 'FLOAT',
-        'innoculation_timestamp': 'TEXT',
         'resource_id': 'TEXT',
         'Plate_name': 'TEXT',
-        'Name': 'TEXT',
         'trans_DNA_concentration': 'TEXT',
         'trans_DNA+conc': 'TEXT',
         'Strain_name': 'TEXT',
@@ -160,11 +158,9 @@ def main():
        'file_basename', 'bmg_filename', 'datetime', 'sample_name',
        'Type', 'Condition', 'strain', 'Transforming_DNA',
        'Protocol', 'Parent_sample', 'Replicate_samples',
-       'Microtiter_plate_name', 'Microtiter_plate_well', 'background',
-       'innoculation_timestamp', 'resource_id', 'Plate_name', 'Name',
+       'Microtiter_plate_name', 'Microtiter_plate_well', 'background', 'resource_id', 'Plate_name',
        'trans_DNA_concentration', 'trans_DNA+conc', 'Strain_name',
-       'Transforming_DNA', 'Parent_sample', 'Replicate_samples', 'Plate_name',
-       'Microtiter_plate_well', 'Plotting_group_number', 'Plotting_group_name',
+        'Plotting_group_number', 'Plotting_group_name',
        'Blank', 'timepoint', 'inoculation_timestamp'
     ]
 

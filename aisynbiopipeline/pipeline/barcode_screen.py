@@ -2,12 +2,12 @@
 """Barcode extractor for amplicon or WGS reads.
 
 Usage:
-  barcode_screen.py <fastq_folder> <barcode_csv> <output_folder> [fnames_must_contain]
+  barcode_screen.py <fastq_folder> <barcode_csv> <extracted_dir> <summary_dir> [fnames_must_contain]
 
 This script scans FASTQ files for anchor sequences, recovers barcode pairs
 (verA, verB) using a barcode CSV, and writes per-read results to CSV.
-Extracted reads with barcodes are written to output_folder/extract_barcodes/.
-Combined results are written to output_folder/.
+Extracted reads with barcodes are written to extracted_dir/.
+Combined results and summary stats are written to summary_dir/.
 Only processes fastq files containing the optional fnames_must_contain string.
 
 Output CSV columns: sample_name, read_id, verA, verB
@@ -50,7 +50,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Extract amplicon barcodes from trimmed reads')
     parser.add_argument('fastq_folder', help='Path to folder containing FASTQ files')
     parser.add_argument('barcode_csv', help='CSV with barcodes (columns: feature_type, feature_number, feature_name, barcode)')
-    parser.add_argument('output_folder', help='Path to output folder')
+    parser.add_argument('extracted_dir', help='Path to output folder for extracted reads and per-fastq CSVs')
+    parser.add_argument('summary_dir', help='Path to output folder for combined CSV and summary stats')
     parser.add_argument('fnames_must_contain', nargs='?', default=None, help='Optional string to filter fastq filenames; only files containing this string are processed')
     return parser.parse_args()
 
@@ -207,7 +208,8 @@ def main():
 
     fastq_folder = Path(args.fastq_folder).resolve()
     barcode_csv = args.barcode_csv
-    output_folder = Path(args.output_folder).resolve()
+    extracted_dir = Path(args.extracted_dir).resolve()
+    summary_dir = Path(args.summary_dir).resolve()
     fnames_filter = args.fnames_must_contain
 
     logger.info('Starting amplicons extraction from %s', fastq_folder)
@@ -215,9 +217,8 @@ def main():
     if not fastq_folder.exists() or not fastq_folder.is_dir():
         raise FileNotFoundError(f'FASTQ folder not found: {fastq_folder}')
 
-    output_folder.mkdir(parents=True, exist_ok=True)
-    extract_dir = output_folder / 'extract_barcodes'
-    extract_dir.mkdir(parents=True, exist_ok=True)
+    extracted_dir.mkdir(parents=True, exist_ok=True)
+    summary_dir.mkdir(parents=True, exist_ok=True)
 
     fastq_files = sorted(fastq_folder.glob('*.fastq*'))
     if fnames_filter:
@@ -240,7 +241,7 @@ def main():
     summary_rows = []
     for fq in fastq_files:
         matched_records, total_reads, anchors_found, mean_barcode_negative_read_length, mean_barcode_read_length, sample_name = process_fastq(
-            fq, barcodes_A, barcodes_B, extract_dir, logger
+            fq, barcodes_A, barcodes_B, extracted_dir, logger
         )
         records.extend(matched_records)
         summary_rows.append(
@@ -254,10 +255,10 @@ def main():
             }
         )
 
-    # write results to output folder
+    # write results to summary folder
     out_suffix = f"_{fnames_filter}" if fnames_filter else ""
-    out_csv = output_folder / f"amplicons_reads{out_suffix}.csv"
-    summary_csv = output_folder / 'summary_stats.csv'
+    out_csv = summary_dir / f"amplicons_reads{out_suffix}.csv"
+    summary_csv = summary_dir / 'summary_stats.csv'
 
     df = pd.DataFrame.from_records(records)
     df.to_csv(out_csv, index=False)
