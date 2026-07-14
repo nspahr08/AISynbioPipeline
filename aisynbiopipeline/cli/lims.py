@@ -37,6 +37,10 @@ def cmd_sync(args) -> int:
         print("Starting manual sync...")
         result = sync_all_sheets()
 
+        if result.get('skipped'):
+            print("\nSync skipped: another sync or archive is already running.")
+            return 0
+
         print("\nSync Results:")
         print(f"  Status: {'SUCCESS' if result['success'] else 'FAILED'}")
         print(f"  Tables synced: {result['tables_synced']}")
@@ -57,40 +61,41 @@ def cmd_sync(args) -> int:
         return 1
 
 
-def cmd_daemon_start(args) -> int:
-    """Start the sync daemon."""
-    try:
-        print("Starting sync daemon...")
-        start_sync_daemon()
-        print("Sync daemon started successfully")
-        print("The daemon will run in the background and sync every configured interval")
-        return 0
+_DAEMON_DEPRECATED_MSG = (
+    "The in-process sync daemon is deprecated: it ran in a background thread that\n"
+    "died as soon as this command exited, so it never synced reliably.\n\n"
+    "Syncing and archiving now run via cron. Manage the schedule with:\n"
+    "    ./install_cron.sh            # install the sync + archive schedule\n"
+    "    ./install_cron.sh --uninstall\n\n"
+    "Other useful commands:\n"
+    "    ./lims.sh sync               # run a one-off sync now\n"
+    "    ./lims.sh status             # show last sync status\n"
+    "    crontab -l                   # see the installed schedule"
+)
 
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+
+def cmd_daemon_start(args) -> int:
+    """Deprecated: sync now runs via cron (see install_cron.sh)."""
+    print(_DAEMON_DEPRECATED_MSG)
+    return 0
 
 
 def cmd_daemon_stop(args) -> int:
-    """Stop the sync daemon."""
-    try:
-        print("Stopping sync daemon...")
-        stop_sync_daemon()
-        print("Sync daemon stopped successfully")
-        return 0
-
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+    """Deprecated: sync now runs via cron (see install_cron.sh)."""
+    print(_DAEMON_DEPRECATED_MSG)
+    return 0
 
 
 def cmd_status(args) -> int:
-    """Get sync status."""
+    """Get sync status (read from the persisted status file)."""
     try:
-        status = get_sync_status()
+        from aisynbiopipeline.limsapi.config import load_config
 
-        print("Sync Daemon Status:")
-        print(f"  Running: {status['daemon_running']}")
+        config = load_config()
+        status = get_sync_status(config)
+        interval = config['sync'].get('interval_minutes', 120)
+
+        print("LIMS sync status (mode: cron):")
         print(f"  Last sync: {status['last_sync'] or 'Never'}")
         print(f"  Last success: {status['last_success'] or 'Never'}")
         print(f"  Syncs completed: {status['syncs_completed']}")
@@ -98,6 +103,22 @@ def cmd_status(args) -> int:
 
         if status['last_error']:
             print(f"  Last error: {status['last_error']}")
+
+        # Freshness: compare age of last sync against the configured interval.
+        last_sync = status['last_sync']
+        if last_sync:
+            try:
+                age_min = (
+                    datetime.now() - datetime.fromisoformat(last_sync)
+                ).total_seconds() / 60
+                stale = age_min > 2 * interval
+                flag = "STALE" if stale else "OK"
+                print(
+                    f"  Freshness: {flag} "
+                    f"(last sync {age_min:.0f} min ago, interval {interval} min)"
+                )
+            except ValueError:
+                pass
 
         return 0
 

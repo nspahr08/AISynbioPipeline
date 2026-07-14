@@ -78,9 +78,13 @@ The LIMS API provides a Python interface for synchronizing data from Google Shee
 ### Quick Start (CLI)
 
 ```bash
-# Use the wrapper script (recommended)
+# Run a one-off sync
 ./lims.sh sync
-./lims.sh daemon start
+
+# Install the automatic sync + archive schedule (cron)
+./install_cron.sh
+
+# Query data
 ./lims.sh query samples --filter status=active
 ```
 
@@ -88,10 +92,10 @@ The LIMS API provides a Python interface for synchronizing data from Google Shee
 
 ```python
 # Add the project directory to your Python path or run from project root
-from aisynbiopipeline.limsapi import start_sync_daemon, query_table
+from aisynbiopipeline.limsapi import sync_all_sheets, query_table
 
-# Start the background sync daemon
-start_sync_daemon()
+# Run a one-off sync (automatic syncing is handled by cron; see below)
+sync_all_sheets()
 
 # Query data
 results = query_table('samples', filters={'status': 'active'})
@@ -118,19 +122,36 @@ The wrapper script will:
 
 #### Sync Operations
 
+Automatic syncing and archiving run via **cron**, not a long-lived daemon. Each
+run is an independent, lock-guarded process, so nothing has to stay alive and the
+schedule survives reboots (cron re-reads it automatically).
+
 ```bash
-# Run a manual sync
+# Run a manual sync now
 ./lims.sh sync
 
-# Start the background sync daemon
-./lims.sh daemon start
+# Install / update the automatic schedule (sync every 2h + hourly/daily/weekly/
+# monthly archives + daily retention cleanup)
+./install_cron.sh
 
-# Stop the daemon
-./lims.sh daemon stop
+# Show what would be installed, or remove the schedule
+./install_cron.sh --show
+./install_cron.sh --uninstall
 
-# Check sync status
+# See the installed schedule and check status
+crontab -l
 ./lims.sh status
 ```
+
+**Changing the schedule:** edit the `CRON_*` variables at the top of
+`install_cron.sh` and re-run it (idempotent). **Changing archive retention:**
+edit the `archive` section of `aisynbiopipeline/limsapi/config.json`.
+
+> The old `./lims.sh daemon start/stop` commands are deprecated — they ran a
+> background thread that died when the command exited and never synced reliably.
+> They now print a pointer to the cron workflow. All sync/archive operations
+> (manual or scheduled) share a single on-disk lock, so two can never run at once.
+
 
 #### Query Operations
 

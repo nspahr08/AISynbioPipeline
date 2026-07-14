@@ -13,6 +13,7 @@ from typing import Dict, Any, Optional, List
 import re
 
 from .config import load_config, get_db_path, get_archive_path
+from .locking import db_lock
 
 
 class ArchiveManager:
@@ -92,14 +93,21 @@ class ArchiveManager:
         archive_file = self.archive_path / archive_name
 
         try:
-            if self.retention.get('compression', True):
-                # Compress while copying
-                with open(self.db_path, 'rb') as f_in:
-                    with gzip.open(archive_file, 'wb') as f_out:
-                        shutil.copyfileobj(f_in, f_out)
-            else:
-                # Just copy
-                shutil.copy2(self.db_path, archive_file)
+            # Hold the shared DB lock (waiting for any in-flight sync) so the
+            # copy captures a quiescent database. NOTE: a plain file copy is
+            # only consistent because the DB uses rollback-journal mode and all
+            # connections are closed between syncs. If the DB is ever switched
+            # to WAL, switch this to `VACUUM INTO` or the sqlite3 online-backup
+            # API, which also capture the -wal file.
+            with db_lock(self.config, blocking=True, timeout=300):
+                if self.retention.get('compression', True):
+                    # Compress while copying
+                    with open(self.db_path, 'rb') as f_in:
+                        with gzip.open(archive_file, 'wb') as f_out:
+                            shutil.copyfileobj(f_in, f_out)
+                else:
+                    # Just copy
+                    shutil.copy2(self.db_path, archive_file)
 
             return archive_file
 

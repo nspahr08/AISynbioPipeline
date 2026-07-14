@@ -14,27 +14,21 @@
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Path to activate script
-ACTIVATE_SCRIPT="$SCRIPT_DIR/activate.sh"
+# Absolute path to the project's micromamba interpreter (aisynbio_env), which is
+# NOT on PATH in non-interactive shells. Keep in sync with lims_cron.sh.
+PROJECT_PYTHON="/scratch/fliu/hub_home/nspahr/.local/share/mamba/envs/aisynbio_env/bin/python"
 
-# Function to check if virtual environment is activated
-is_venv_activated() {
-    # Check if VIRTUAL_ENV is set or if we're in a conda environment
-    if [[ -n "$VIRTUAL_ENV" ]] || [[ -n "$CONDA_DEFAULT_ENV" ]]; then
-        return 0
-    fi
-    return 1
-}
-
-# Activate environment if not already activated
-if ! is_venv_activated; then
-    if [[ -f "$ACTIVATE_SCRIPT" ]]; then
-        echo "Activating environment..."
-        source "$ACTIVATE_SCRIPT"
-    else
-        echo "Warning: activate.sh not found at $ACTIVATE_SCRIPT"
-        echo "Attempting to run LIMS CLI without environment activation..."
-    fi
+# Pick the interpreter: prefer the project env; if that's missing, fall back to
+# an already-activated env's python, then to whatever `python` is on PATH.
+if [[ -x "$PROJECT_PYTHON" ]]; then
+    PYTHON="$PROJECT_PYTHON"
+elif [[ -n "${CONDA_PREFIX:-}" && -x "$CONDA_PREFIX/bin/python" ]]; then
+    PYTHON="$CONDA_PREFIX/bin/python"
+elif command -v python &> /dev/null; then
+    PYTHON="$(command -v python)"
+else
+    echo "Error: no Python interpreter found (looked for $PROJECT_PYTHON)" >&2
+    exit 1
 fi
 
 # Path to the LIMS CLI Python module
@@ -46,15 +40,8 @@ if [[ ! -f "$LIMS_CLI" ]]; then
     exit 1
 fi
 
-# Check if python is available
-if ! command -v python &> /dev/null; then
-    echo "Error: 'python' command not found"
-    echo "Please ensure Python is installed and in your PATH"
-    exit 1
-fi
-
 # Add the project root to PYTHONPATH so Python can find the aisynbiopipeline module
 export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"
 
-# Run the LIMS CLI directly with Python
-exec python "$LIMS_CLI" "$@"
+# Run the LIMS CLI directly with the resolved interpreter
+exec "$PYTHON" "$LIMS_CLI" "$@"

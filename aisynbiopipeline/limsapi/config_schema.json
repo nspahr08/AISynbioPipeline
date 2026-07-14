@@ -80,8 +80,13 @@
         },
         "lock_file": {
           "type": "string",
-          "description": "Path to sync daemon lock file for multi-process synchronization",
-          "default": "/storage/synbio/.aisynbio_sync_daemon.lock"
+          "description": "Path to the shared DB lock file serializing all sync/archive operations. Must live on the SAME shared filesystem as the database (e.g. next to db_path) so every host that can reach the DB - cron host and notebook hosts alike - contends on the same lock.",
+          "default": "/storage/synbio/.lims.lock"
+        },
+        "status_file": {
+          "type": "string",
+          "description": "Path to the JSON file where each sync run persists its status (for cross-process `lims status`)",
+          "default": "/storage/synbio/sync_status.json"
         }
       }
     },

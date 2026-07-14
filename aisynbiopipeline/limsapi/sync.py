@@ -6,8 +6,10 @@ mirror database, including a background daemon with scheduling.
 """
 
 import fcntl
+import json
 import logging
 import os
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -19,6 +21,7 @@ import schedule
 from .config import load_config
 from .sheets import SheetsReader
 from .database import DatabaseManager
+from .locking import db_lock, LockBusyError
 
 
 # Global daemon state
@@ -181,9 +184,77 @@ def _release_daemon_lock(
         logger.error(f"Failed to release daemon lock: {e}")
 
 
+def _get_status_path(config: Dict[str, Any]) -> Optional[Path]:
+    """Return the configured sync status file path, or None if unset."""
+    status_file = config['sync'].get('status_file')
+    return Path(status_file) if status_file else None
+
+
+def _write_status(config: Dict[str, Any], sync_result: Dict[str, Any]) -> None:
+    """
+    Persist the latest sync status to the configured status file.
+
+    Each cron sync runs as its own process, so the in-memory ``_sync_status``
+    globals are useless across runs. This writes a small JSON file (atomically,
+    via a temp file + ``os.replace``) that ``lims status`` can read. Cumulative
+    counters are kept via read-modify-write, which is race-free because sync
+    holds the DB lock for its whole run.
+    """
+    status_path = _get_status_path(config)
+    if status_path is None:
+        return
+
+    try:
+        status_path.parent.mkdir(parents=True, exist_ok=True)
+
+        prev: Dict[str, Any] = {}
+        try:
+            with open(status_path, 'r') as f:
+                prev = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            prev = {}
+
+        success = sync_result.get('success', False)
+        status = {
+            'last_sync': sync_result.get('end_time') or sync_result.get('start_time'),
+            'last_success': (
+                sync_result.get('end_time') if success else prev.get('last_success')
+            ),
+            'last_error': (
+                None if success
+                else (sync_result.get('errors') or [None])[-1] or prev.get('last_error')
+            ),
+            'syncs_completed': prev.get('syncs_completed', 0) + (1 if success else 0),
+            'syncs_failed': prev.get('syncs_failed', 0) + (0 if success else 1),
+            'last_result': sync_result,
+        }
+
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(status_path.parent), prefix='.sync_status_', suffix='.tmp'
+        )
+        try:
+            with os.fdopen(fd, 'w') as f:
+                json.dump(status, f, indent=2, default=str)
+            os.replace(tmp_path, status_path)
+        except Exception:
+            # Clean up the temp file on failure; never mask the sync outcome.
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+    except Exception as e:  # pragma: no cover - status is best-effort
+        logging.getLogger('lims_sync').warning(f"Failed to write sync status: {e}")
+
+
 def sync_all_sheets(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Perform a full sync of all sheets from Google Sheets to SQLite.
+
+    Acquires the shared DB lock (non-blocking) so it can never run concurrently
+    with another sync or an archive, regardless of how it was launched (cron,
+    CLI, notebook). If the lock is already held, the sync is skipped (returns a
+    result with ``skipped=True``) rather than piling up.
 
     Args:
         config: Configuration dict (loads from file if not provided)
@@ -198,10 +269,36 @@ def sync_all_sheets(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         config = load_config()
 
     logger = configure_logging(config)
+
+    try:
+        with db_lock(config, blocking=False):
+            return _sync_all_sheets_locked(config, logger)
+    except LockBusyError:
+        logger.warning(
+            "Another sync or archive is in progress; skipping this sync"
+        )
+        return {
+            'start_time': datetime.now().isoformat(),
+            'end_time': datetime.now().isoformat(),
+            'success': False,
+            'skipped': True,
+            'tables_synced': 0,
+            'total_rows_inserted': 0,
+            'total_rows_updated': 0,
+            'total_rows_deleted': 0,
+            'errors': [],
+        }
+
+
+def _sync_all_sheets_locked(
+    config: Dict[str, Any], logger: logging.Logger
+) -> Dict[str, Any]:
+    """Run the actual sync while holding the DB lock (see ``sync_all_sheets``)."""
     sync_result = {
         'start_time': datetime.now().isoformat(),
         'end_time': None,
         'success': False,
+        'skipped': False,
         'tables_synced': 0,
         'total_rows_inserted': 0,
         'total_rows_updated': 0,
@@ -318,6 +415,10 @@ def sync_all_sheets(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         raise
 
     finally:
+        # Persist status for cross-process `lims status` (best-effort), while
+        # still holding the DB lock so the read-modify-write is race-free.
+        _write_status(config, sync_result)
+
         # Cleanup connections
         if sheets_reader:
             sheets_reader.disconnect()
@@ -441,15 +542,41 @@ def stop_sync_daemon() -> None:
             _daemon_lock_fd = None
 
 
-def get_sync_status() -> Dict[str, Any]:
+def get_sync_status(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    Get the current sync daemon status.
+    Get the latest sync status.
+
+    Reads the persisted status file (written by every sync run) so it works
+    across independent processes, e.g. cron syncs and a separate ``lims status``
+    invocation. Falls back to this process's in-memory status if the file is
+    missing or unreadable.
+
+    Args:
+        config: Configuration dict (loads from file if not provided)
 
     Returns:
         Dictionary with sync status information
     """
+    if config is None:
+        config = load_config()
+
+    status_path = _get_status_path(config)
+    if status_path is not None:
+        try:
+            with open(status_path, 'r') as f:
+                persisted = json.load(f)
+            return {
+                'last_sync': persisted.get('last_sync'),
+                'last_success': persisted.get('last_success'),
+                'last_error': persisted.get('last_error'),
+                'syncs_completed': persisted.get('syncs_completed', 0),
+                'syncs_failed': persisted.get('syncs_failed', 0),
+            }
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            pass
+
+    # Fallback: in-memory status for the current process only.
     return {
-        'daemon_running': _daemon_running,
         'last_sync': _sync_status['last_sync'],
         'last_success': _sync_status['last_success'],
         'last_error': _sync_status['last_error'],
