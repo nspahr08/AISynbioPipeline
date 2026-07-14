@@ -367,6 +367,65 @@ class DatabaseManager:
             conn.rollback()
             raise Exception(f"Failed to mark deleted rows in table '{table_name}': {e}")
 
+    def delete_rows(
+        self,
+        table_name: str,
+        column: str,
+        value: Any,
+        soft: bool = True,
+    ) -> int:
+        """
+        Delete rows from a table where ``column`` equals ``value``.
+
+        By default this performs a *soft* delete (sets ``deleted=1``), which is
+        consistent with how the rest of the codebase treats removed rows: reads
+        via ``query.py`` hide ``deleted=1`` rows, and a soft delete survives the
+        next Google Sheets sync. A *hard* delete (``soft=False``) removes the
+        rows permanently, but note that if the matching row still exists in the
+        source Google Sheet it will be re-inserted on the next sync.
+
+        Args:
+            table_name: Name of the table to delete from
+            column: Column to match on
+            value: Value the column must equal for a row to be deleted
+            soft: If True (default), mark rows deleted=1; if False, remove them
+
+        Returns:
+            Number of rows affected
+
+        Raises:
+            Exception: If the table doesn't exist or the delete fails
+        """
+        if not self.table_exists(table_name):
+            raise Exception(f"Table '{table_name}' does not exist")
+
+        # Match the column-name sanitization used elsewhere (create_table,
+        # upsert_rows) so callers can pass the human-readable column name.
+        safe_col = column.replace(' ', '_').replace('-', '_')
+
+        conn = self.get_connection()
+
+        try:
+            if soft:
+                sql = (
+                    f'UPDATE "{table_name}" SET deleted=1, last_synced=? '
+                    f'WHERE "{safe_col}"=? AND deleted=0'
+                )
+                cursor = conn.execute(sql, (datetime.now().isoformat(), value))
+            else:
+                sql = f'DELETE FROM "{table_name}" WHERE "{safe_col}"=?'
+                cursor = conn.execute(sql, (value,))
+
+            conn.commit()
+            return cursor.rowcount
+
+        except Exception as e:
+            conn.rollback()
+            raise Exception(
+                f"Failed to delete rows from table '{table_name}' "
+                f"where {safe_col}={value!r}: {e}"
+            )
+
     def get_all_tables(self) -> List[str]:
         """
         Get list of all tables in the database.

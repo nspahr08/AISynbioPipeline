@@ -1669,6 +1669,9 @@ class Breseq:
         polymorphism_mode: Optional[bool] = None,
         applied_gd: Optional[Union[str, Path]] = None,
         verbose: bool = False,
+        locus: Optional[str] = None,
+        accession: Optional[str] = None,
+        version: Optional[str] = None,
     ) -> str:
         """Apply mutations from data/output.gd to the reference using gdtools APPLY.
 
@@ -1684,6 +1687,15 @@ class Breseq:
             applied_gd: Optional path to write an updated GenomeDiff file
                 (gdtools --applied-gd).
             verbose: If True, pass -v to gdtools.
+            locus: Optional value for the GenBank LOCUS name field. gdtools
+                APPLY has no flag for this, so when provided the output
+                GenBank file is post-processed to set it. Ignored for
+                non-GENBANK formats.
+            accession: Optional value for the GenBank ACCESSION field.
+                Post-processed like `locus`. Ignored for non-GENBANK formats.
+            version: Optional integer version for the GenBank VERSION field
+                (rendered as ``ACCESSION.version``). Post-processed like
+                `locus`. Ignored for non-GENBANK formats.
 
         Returns:
             The path to the applied reference file (string).
@@ -1732,6 +1744,22 @@ class Breseq:
                 f"cmd: {' '.join(cmd)}\n"
                 f"stderr: {e.stderr}"
             ) from e
+
+        # Optionally override GenBank LOCUS / ACCESSION / VERSION fields.
+        # gdtools APPLY has no flags for these, so post-process the file.
+        if fmt == 'GENBANK' and (locus or accession or version):
+            from Bio import SeqIO
+
+            records = list(SeqIO.parse(str(out_path), 'genbank'))
+            for record in records:
+                if locus:
+                    record.name = locus
+                if accession:
+                    record.id = accession
+                    record.annotations['accessions'] = [accession]
+                if version:
+                    record.annotations['sequence_version'] = [version]
+            SeqIO.write(records, str(out_path), 'genbank')
 
         # Record attributes on the object
         self.applied_reference = str(out_path)

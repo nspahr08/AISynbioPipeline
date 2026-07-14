@@ -8,6 +8,48 @@ import glob
 import json
 
 
+def write_fasta_from_dataframe(
+    df: pd.DataFrame,
+    output_path: str,
+    header_column: str,
+    sequence_column: str,
+    gzip_output: bool = False,
+) -> str:
+    """
+    Write a FASTA formatted file from a pandas DataFrame.
+
+    Args:
+        df (pd.DataFrame): DataFrame containing the sequences to write.
+        output_path (str): Path to write the FASTA file to.
+        header_column (str): Name of the column containing the FASTA headers.
+        sequence_column (str): Name of the column containing the sequences.
+        gzip_output (bool): If True, gzip the output file. Defaults to False.
+
+    Returns:
+        str: Path to the written FASTA file.
+
+    Raises:
+        ValueError: If a required column is missing or headers are not unique.
+    """
+
+    for column in (header_column, sequence_column):
+        if column not in df.columns:
+            raise ValueError(f"Column '{column}' not found in DataFrame")
+
+    headers = df[header_column].astype(str)
+    duplicates = headers[headers.duplicated()].unique()
+    if len(duplicates) > 0:
+        raise ValueError(f"Headers must be unique. Duplicates found: {list(duplicates)}")
+
+    open_func = gzip.open if gzip_output else open
+    mode = 'wt'
+    with open_func(output_path, mode) as f:
+        for header, sequence in zip(headers, df[sequence_column].astype(str)):
+            f.write(f'>{header}\n{sequence}\n')
+
+    return output_path
+
+
 def parse_illumina_fastq_filename(filepath: str) -> tuple[str, str]:
     """
     Parse an Illumina fastq filename to extract sample number, lane number, and read direction.

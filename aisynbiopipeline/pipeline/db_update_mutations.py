@@ -150,7 +150,7 @@ def main():
 
     # Filter to required columns, ignoring others
     required_columns = [
-        'Experiment', 'Seq_sample', 'Seqorder', 'Breseq_registry_ID', 'seq_id', 'aa_new_seq', 'aa_position', 'aa_ref_seq', 'codon_new_seq', 'codon_position', 'codon_ref_seq', 'evidence_ids', 'frequency', 'gene_name', 'gene_position', 'gene_product', 'gene_strand', 'genes_inactivated', 'genes_overlapping', 'genes_promoter', 'id', 'locus_tag', 'locus_tags_inactivated', 'locus_tags_overlapping', 'locus_tags_promoter', 'mutation_category', 'new_seq', 'position', 'position_end', 'position_start', 'ref_seq', 'snp_type', 'type', 'codon_number', 'codon_position_is_indeterminate', 'transl_table', 'insert_position', 'repeat_length', 'repeat_new_copies', 'repeat_ref_copies', 'repeat_seq', 'size', 'multiple_polymorphic_SNPs_in_same_codon'
+        'Seq_sample', 'Seqorder', 'Breseq_registry_ID', 'seq_id', 'aa_new_seq', 'aa_position', 'aa_ref_seq', 'codon_new_seq', 'codon_position', 'codon_ref_seq', 'evidence_ids', 'frequency', 'gene_name', 'gene_position', 'gene_product', 'gene_strand', 'genes_inactivated', 'genes_overlapping', 'genes_promoter', 'id', 'locus_tag', 'locus_tags_inactivated', 'locus_tags_overlapping', 'locus_tags_promoter', 'mutation_category', 'new_seq', 'position', 'position_end', 'position_start', 'ref_seq', 'snp_type', 'type', 'codon_number', 'codon_position_is_indeterminate', 'transl_table', 'insert_position', 'repeat_length', 'repeat_new_copies', 'repeat_ref_copies', 'repeat_seq', 'size', 'multiple_polymorphic_SNPs_in_same_codon'
     ]
 
     missing_columns = [col for col in required_columns if col not in df.columns]

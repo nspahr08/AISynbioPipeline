@@ -184,7 +184,7 @@ class Library:
     
     def create_subfolder(self, subfolder: str):
         """Create subfolder."""
-        acceptable = ['received', 'trimmed', 'breseq', 'mapped', 'filtered', 'barcode_extracted']
+        acceptable = ['received', 'trimmed', 'breseq', 'mapped', 'filtered', 'barcode_extracted', 'amplicon_extracted']
         if subfolder not in acceptable:
             raise ValueError(
                 f"Subfolder name must be among this list: {acceptable}."
@@ -204,9 +204,9 @@ class Library:
         Delete library data.
         
         Args:
-            subfolder: Subfolder to delete ('all', 'received', 'trimmed', 'filtered', 'breseq', 'mapped')
+            subfolder: Subfolder to delete ('all', 'received', 'trimmed', 'filtered', 'breseq', 'mapped', 'amplicon_extracted')
         """
-        acceptable = ['all', 'received', 'trimmed', 'filtered', 'breseq', 'mapped']
+        acceptable = ['all', 'received', 'trimmed', 'filtered', 'breseq', 'mapped', 'amplicon_extracted']
         if subfolder not in acceptable:
             raise ValueError(
                 f"Subfolder name must be among this list: {acceptable}."
@@ -356,6 +356,15 @@ class SeqSample:
         breseq_path = self.library.path / 'breseq' / self.sample_name
         # breseq_path.mkdir(parents=True, exist_ok=True)
         return breseq_path
+
+    @property
+    def breseq_registry(self) -> Path:
+        """Get path to breseq registry for this sample (Illumina only)."""
+        if self.library.platform != 'Illumina':
+            return None
+        registry_path = self.library.path / 'breseq' / self.sample_name / '.breseq_params_registry.json'
+        # breseq_path.mkdir(parents=True, exist_ok=True)
+        return registry_path
     
     @property
     def mapped(self) -> Path:

@@ -2,10 +2,12 @@
 """Barcode extractor for amplicon or WGS reads.
 
 Usage:
-  barcode_screen.py <fastq_folder> <barcode_csv> <extracted_dir> <summary_dir> [fnames_must_contain]
+  barcode_screen.py <fastq_folder> <extracted_dir> <summary_dir> [fnames_must_contain] [--library LIBRARY]
 
 This script scans FASTQ files for anchor sequences, recovers barcode pairs
-(verA, verB) using a barcode CSV, and writes per-read results to CSV.
+(verA, verB), and writes per-read results to CSV. The verA/verB barcode
+reference is pulled from the Library_candidates table in the LIMS database
+(rows where Library == the --library value, default 'verABLib_large').
 Extracted reads with barcodes are written to extracted_dir/.
 Combined results and summary stats are written to summary_dir/.
 Only processes fastq files containing the optional fnames_must_contain string.
@@ -17,7 +19,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-import time
+import sys
 from pathlib import Path
 from typing import Dict, Tuple
 import pandas as pd
@@ -26,10 +28,19 @@ import gzip
 from Bio import SeqIO
 from Bio.Seq import Seq
 
+# Add parent directory to path so the limsapi package is importable.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from limsapi.query import query_table
+
 # Anchor sequences (kept from original script)
 ANCHOR_B_BEFORE = "GCGGAAAGTGTGAGGCGCTT".upper()
 ANCHOR_BETWEEN = "CGGC".upper()
 ANCHOR_A_AFTER = "CTCTAGAAATAATTTTGTTT".upper()
+
+# Library_candidates.Library value holding the verA/verB barcode reference.
+DEFAULT_LIBRARY = 'verABLib_large'
+LIBRARY_CANDIDATES_TABLE = 'Library_candidates'
 
 ANALYSIS_HOME_ROOT = Path('/storage/nspahr/lib_analysis')
 LOG_FILE = Path(__file__).resolve().parent / 'pipeline.log'
@@ -49,10 +60,10 @@ def configure_logging():
 def parse_args():
     parser = argparse.ArgumentParser(description='Extract amplicon barcodes from trimmed reads')
     parser.add_argument('fastq_folder', help='Path to folder containing FASTQ files')
-    parser.add_argument('barcode_csv', help='CSV with barcodes (columns: feature_type, feature_number, feature_name, barcode)')
     parser.add_argument('extracted_dir', help='Path to output folder for extracted reads and per-fastq CSVs')
     parser.add_argument('summary_dir', help='Path to output folder for combined CSV and summary stats')
     parser.add_argument('fnames_must_contain', nargs='?', default=None, help='Optional string to filter fastq filenames; only files containing this string are processed')
+    parser.add_argument('--library', default=DEFAULT_LIBRARY, help=f'Library_candidates.Library value to pull barcodes from (default: {DEFAULT_LIBRARY})')
     return parser.parse_args()
 
 
@@ -81,25 +92,35 @@ def base_name_without_fastq_ext(path: Path) -> str:
     return path.stem
 
 
-def load_barcodes(csv_path: str) -> Tuple[Dict[str, str], Dict[str, str]]:
-    df = pd.read_csv(csv_path)
-    required = {'feature_type', 'feature_number', 'feature_name', 'barcode'}
-    if not required.issubset(set(df.columns)):
-        raise ValueError(f'Barcode CSV missing required columns. Required: {required}')
+def load_barcodes(library: str) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Pull the verA/verB barcode reference from the Library_candidates table.
+
+    Reads rows from Library_candidates where Library == ``library`` and builds
+    two lookups mapping barcode sequence -> feature_number, one for verA and one
+    for verB features.
+    """
+    rows = query_table(LIBRARY_CANDIDATES_TABLE, filters={'Library': library})
+    if not rows:
+        raise ValueError(
+            f"No rows found in {LIBRARY_CANDIDATES_TABLE} for Library == '{library}'"
+        )
 
     barcodes_A: Dict[str, str] = {}
     barcodes_B: Dict[str, str] = {}
 
-    for _, row in df.iterrows():
-        typ = str(row['feature_type']).strip()
-        num = str(row['feature_number']).strip()
-        bc = str(row['barcode']).strip().upper()
-        if not bc:
+    for row in rows:
+        # Normalize DB column names (Feature_type, Feature_number, Barcode) to
+        # lowercase so lookups are case-insensitive.
+        r = {str(k).lower(): v for k, v in row.items()}
+        typ = str(r.get('feature_type', '')).strip()
+        alias = str(r.get('feature_alias', '')).strip()
+        bc = str(r.get('barcode', '')).strip().upper()
+        if not bc or bc.lower() == 'nan':
             continue
         if typ == 'verA':
-            barcodes_A[bc] = num
+            barcodes_A[bc] = alias
         elif typ == 'verB':
-            barcodes_B[bc] = num
+            barcodes_B[bc] = alias
         else:
             # ignore unknown types
             continue
@@ -173,8 +194,8 @@ def process_fastq(
                     record = {
                         'sample_name': sample_name,
                         'read_id': rec.id,
-                        'verA': f'A{ver_a}' if ver_a is not None else None,
-                        'verB': f'B{ver_b}' if ver_b is not None else None,
+                        'verA': ver_a if ver_a is not None else None,
+                        'verB': ver_b if ver_b is not None else None,
                     }
                     matched_records.append(record)
                     matched_reads.append(rec)
@@ -207,7 +228,7 @@ def main():
     logger = configure_logging()
 
     fastq_folder = Path(args.fastq_folder).resolve()
-    barcode_csv = args.barcode_csv
+    library = args.library
     extracted_dir = Path(args.extracted_dir).resolve()
     summary_dir = Path(args.summary_dir).resolve()
     fnames_filter = args.fnames_must_contain
@@ -228,14 +249,17 @@ def main():
 
     logger.info('Found %d fastq files in %s', len(fastq_files), fastq_folder)
 
-    # load barcodes
+    # load barcodes from the Library_candidates table
     try:
-        barcodes_A, barcodes_B = load_barcodes(barcode_csv)
+        barcodes_A, barcodes_B = load_barcodes(library)
     except Exception as exc:
-        logger.error('Failed to load barcode CSV: %s', exc)
+        logger.error('Failed to load barcodes from database (Library == %s): %s', library, exc)
         raise
 
-    logger.info('Loaded %d A barcodes and %d B barcodes', len(barcodes_A), len(barcodes_B))
+    logger.info(
+        "Loaded %d A barcodes and %d B barcodes from %s (Library == '%s')",
+        len(barcodes_A), len(barcodes_B), LIBRARY_CANDIDATES_TABLE, library,
+    )
 
     records = []
     summary_rows = []

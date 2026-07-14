@@ -17,7 +17,9 @@
       "Bash(sqlite3:*)",
       "Bash(./lims.sh sync:*)",
       "Bash(pip install:*)",
-      "Bash(./lims.sh:*)"
+      "Bash(./lims.sh:*)",
+      "Bash(systemctl is-enabled *)",
+      "Bash(command -v crontab)"
     ],
     "deny": [],
     "ask": []

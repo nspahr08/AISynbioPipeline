@@ -54,6 +54,7 @@ KEEP_EQUAL = [
     ('Breseq_registry', 'ID', TARGET_BRESEQ_ID),
     ('Copy_numbers', 'Seqorder', TARGET_SEQORDER),
     ('Copy_numbers', 'Breseq_registry_ID', TARGET_BRESEQ_ID),
+    ('Mutations', 'Experiment', TARGET_EXPERIMENT),
 ]
 
 # Tables to drop entirely.

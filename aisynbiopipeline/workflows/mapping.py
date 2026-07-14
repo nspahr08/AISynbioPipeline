@@ -8,7 +8,60 @@ import pysam
 from pathlib import Path
 
 
-def map_reads(fwd_reads, reference, output_dir, rvs_reads=None, keep_index=False, index_dir=None, sample_name=None):
+# Read-file extensions recognized as FASTA vs FASTQ. bowtie2 defaults to FASTQ
+# (-q) and needs -f for FASTA input, so we detect the format from the extension.
+# A trailing .gz is stripped before checking.
+FASTA_READ_EXTENSIONS = ('.fa', '.fasta', '.fna', '.mfa')
+FASTQ_READ_EXTENSIONS = ('.fq', '.fastq')
+
+
+def _strip_gz(path) -> str:
+    """Return the path as a string with a trailing '.gz' removed (if present)."""
+    p = str(path)
+    if p.lower().endswith('.gz'):
+        p = p[:-3]
+    return p
+
+
+def reads_are_fasta(reads) -> bool:
+    """Determine whether read file(s) are FASTA (vs FASTQ) from their extension.
+
+    Args:
+        reads: A single read file path or a list of paths. All files must share
+            the same format.
+
+    Returns:
+        True if the reads are FASTA, False if FASTQ.
+
+    Raises:
+        ValueError: If an extension is unrecognized, no reads are given, or the
+            files mix FASTA and FASTQ.
+    """
+    if isinstance(reads, (str, Path)):
+        reads = [reads]
+    reads = [r for r in reads if r is not None]
+    if not reads:
+        raise ValueError("No read files provided to determine format.")
+
+    is_fasta = []
+    for r in reads:
+        ext = os.path.splitext(_strip_gz(r))[1].lower()
+        if ext in FASTA_READ_EXTENSIONS:
+            is_fasta.append(True)
+        elif ext in FASTQ_READ_EXTENSIONS:
+            is_fasta.append(False)
+        else:
+            raise ValueError(
+                f"Unrecognized read file extension '{ext}' for '{r}'. Expected one "
+                f"of {FASTA_READ_EXTENSIONS + FASTQ_READ_EXTENSIONS} (optionally .gz)."
+            )
+
+    if len(set(is_fasta)) > 1:
+        raise ValueError("All read files must be the same format (all FASTA or all FASTQ).")
+    return is_fasta[0]
+
+
+def map_reads(fwd_reads, reference, output_dir, rvs_reads=None, keep_index=False, index_dir=None, sample_name=None, reads_format=None):
     
     if not Path(reference).exists():
         raise FileNotFoundError(
@@ -43,7 +96,7 @@ def map_reads(fwd_reads, reference, output_dir, rvs_reads=None, keep_index=False
             bt2_index = index_reference(reference, index_dir=temp_dir)
         else:
             bt2_index = index_reference(reference, index_dir=temp_dir)
-    sam_file = map_to_indexed_ref(fwd_reads, bt2_index, output_dir, rvs_reads=rvs_reads, sample_name=sample_name)
+    sam_file = map_to_indexed_ref(fwd_reads, bt2_index, output_dir, rvs_reads=rvs_reads, sample_name=sample_name, reads_format=reads_format)
     bam_file = sort_and_index_bam(sam_file)
     if temp_dir and os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
@@ -68,23 +121,25 @@ def index_reference(reference: str, index_dir):
 
 
 def map_to_indexed_ref(
-        fwd_reads, bowtie2_index, output_dir, rvs_reads=None, sample_name='output'):
+        fwd_reads, bowtie2_index, output_dir, rvs_reads=None, sample_name='output', reads_format=None):
     """
     Map reads to an indexed reference using bowtie2.
-    
+
     Args:
         fwd_reads: Forward reads file path(s), single or list
         bowtie2_index: Path to bowtie2 index (prefix only)
         output_dir: Directory for output files
         rvs_reads: Reverse reads file path(s), single or list. If None, treats fwd_reads as unpaired.
         sample_name: Prefix for output files
+        reads_format: Input read format: 'fasta' or 'fastq'. If None (default),
+            the format is auto-detected from the read file extensions.
     """
     # Convert inputs to lists if they're strings
     if isinstance(fwd_reads, str):
         fwd_reads = [fwd_reads]
     if rvs_reads is not None and isinstance(rvs_reads, str):
         rvs_reads = [rvs_reads]
-    
+
     # Validate read file counts
     if rvs_reads is not None:
         if len(fwd_reads) != len(rvs_reads):
@@ -92,21 +147,35 @@ def map_to_indexed_ref(
         read_type = "paired-end"
     else:
         read_type = "unpaired (single-end)"
-        
-    print(f"Mapping {read_type} reads to reference {bowtie2_index}")
+
+    # Determine whether reads are FASTA (bowtie2 -f) or FASTQ (bowtie2 -q, default).
+    if reads_format is None:
+        fasta_input = reads_are_fasta(fwd_reads + (rvs_reads or []))
+    elif reads_format.lower() in ('fasta', 'fa'):
+        fasta_input = True
+    elif reads_format.lower() in ('fastq', 'fq'):
+        fasta_input = False
+    else:
+        raise ValueError(f"reads_format must be 'fasta' or 'fastq', got '{reads_format}'.")
+
+    print(f"Mapping {read_type} {'FASTA' if fasta_input else 'FASTQ'} reads to reference {bowtie2_index}")
     print(f"  Forward: {fwd_reads}")
     if rvs_reads:
         print(f"  Reverse: {rvs_reads}")
-    
+
     output_sam = os.path.join(output_dir, sample_name + '.sam')
     log_file = os.path.join(output_dir, sample_name + '_bowtie2.log')
-    
+
     # Build command with multiple input files
     cmd = [
         'bowtie2',
         '-x', bowtie2_index,
     ]
-    
+
+    # Tell bowtie2 the input format (FASTA needs -f; FASTQ is the default).
+    if fasta_input:
+        cmd.append('-f')
+
     if rvs_reads:
         # Paired-end reads
         cmd.extend([
@@ -232,10 +301,12 @@ def map_and_feature_count(
         keep_index=False,
         index_dir=None,
         sample_name=None,
-        fadu_folder=None):
+        fadu_folder=None,
+        reads_format=None):
     """
     Maps reads to a reference and performs feature counting using FADU.
-    Supports both paired-end and unpaired (single-end) reads.
+    Supports both paired-end and unpaired (single-end) reads, in FASTQ or FASTA
+    format (auto-detected from the read file extensions, or set reads_format).
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -247,7 +318,8 @@ def map_and_feature_count(
         rvs_reads=rvs_reads,
         keep_index=keep_index,
         index_dir=index_dir,
-        sample_name=sample_name
+        sample_name=sample_name,
+        reads_format=reads_format
     )
     
     output_dir = run_fadu(
