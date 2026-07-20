@@ -4,11 +4,15 @@
 #
 # cron runs with a bare environment (no conda/micromamba activation, minimal
 # PATH, cwd=$HOME). This wrapper makes invocation deterministic:
-#   - uses the project's Python interpreter by ABSOLUTE path,
+#   - uses the project's Python interpreter by ABSOLUTE path (LIMS_PYTHON,
+#     baked into the crontab by install_cron.sh),
 #   - sets PYTHONPATH to the project root,
-#   - refuses to run (cleanly) if the /storage NFS mount isn't ready, which
-#     prevents config.py's mkdir() from creating phantom dirs under the
-#     mountpoint before NFS comes up.
+#   - refuses to run (cleanly) if the shared data directory isn't available,
+#     which prevents config.py's mkdir() from creating phantom local dirs when
+#     the network filesystem isn't mounted (or this is the wrong host).
+#
+# The data directory is read from config.json's db_path, so each host uses its
+# own mountpoint for the shared filesystem with no per-host edits to this script.
 #
 # Usage (same subcommands as lims.sh / the CLI):
 #   ./lims_cron.sh sync
@@ -20,13 +24,9 @@ set -euo pipefail
 # Project root = directory containing this script.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Absolute path to the project's interpreter (not on PATH in cron). install_cron.sh
-# bakes the correct per-host path into the crontab as LIMS_PYTHON, so the same
-# tracked script works on every host; the fallback is only for direct manual runs.
+# Interpreter (not on PATH in cron). install_cron.sh bakes the correct per-host
+# path into the crontab as LIMS_PYTHON; the fallback is only for direct runs.
 PYTHON="${LIMS_PYTHON:-/scratch/fliu/hub_home/nspahr/.local/share/mamba/envs/aisynbio_env/bin/python}"
-
-# Data mount that must be present before touching the DB/archives/logs.
-STORAGE_MOUNT="/storage"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') lims_cron: $*"; }
 
@@ -35,10 +35,13 @@ if [[ ! -x "$PYTHON" ]]; then
     exit 1
 fi
 
-# Skip cleanly (exit 0) if /storage isn't mounted yet — do NOT let Python run
-# and create local phantom directories under the mountpoint.
-if ! mountpoint -q "$STORAGE_MOUNT"; then
-    log "SKIP: $STORAGE_MOUNT is not mounted"
+# Shared data directory = parent of db_path in config.json. Reading config.json
+# (a local file in the checkout) never touches the shared FS, so this is safe
+# even when the mount is down. LIMS_DATA_DIR overrides if ever needed.
+DATA_DIR="${LIMS_DATA_DIR:-$("$PYTHON" -c "import json,os;print(os.path.dirname(json.load(open('$SCRIPT_DIR/aisynbiopipeline/limsapi/config.json'))['database']['db_path']))" 2>/dev/null || true)}"
+
+if [[ -z "$DATA_DIR" || ! -d "$DATA_DIR" ]]; then
+    log "SKIP: shared data directory not available: ${DATA_DIR:-<unknown>}"
     exit 0
 fi
 

@@ -17,12 +17,20 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WRAPPER="$SCRIPT_DIR/lims_cron.sh"
-CRON_LOG="/storage/synbio/cron.log"
+CONFIG_JSON="$SCRIPT_DIR/aisynbiopipeline/limsapi/config.json"
 
 # Interpreter baked into the crontab so lims_cron.sh uses this host's env.
 # Defaults to the `python` on PATH (run this with aisynbio_env activated), or
 # override explicitly:  LIMS_PYTHON=/path/to/python ./install_cron.sh
 PYTHON_BIN="${LIMS_PYTHON:-$(command -v python 2>/dev/null || true)}"
+
+# Shared data dir = parent of db_path in config.json (this host's mountpoint for
+# the shared filesystem). Used to place the cron log; validated before install.
+DATA_DIR=""
+if [[ -x "$PYTHON_BIN" && -f "$CONFIG_JSON" ]]; then
+    DATA_DIR="$("$PYTHON_BIN" -c "import json,os;print(os.path.dirname(json.load(open('$CONFIG_JSON'))['database']['db_path']))" 2>/dev/null || true)"
+fi
+CRON_LOG="${DATA_DIR:-/storage/synbio}/cron.log"
 
 # --- Schedule (standard cron: minute hour day-of-month month day-of-week) ----
 CRON_SYNC="30 */2 * * *"    # sync every 2 hours at :30 (off the archive minutes)
@@ -78,7 +86,13 @@ case "${1:-install}" in
             echo "    LIMS_PYTHON=/path/to/env/bin/python ./install_cron.sh" >&2
             exit 1
         fi
+        if [[ -z "$DATA_DIR" || ! -d "$DATA_DIR" ]]; then
+            echo "Error: shared data directory not found: '${DATA_DIR:-<none>}'" >&2
+            echo "Check database.db_path in $CONFIG_JSON and that the mount is up." >&2
+            exit 1
+        fi
         echo "Using interpreter: $PYTHON_BIN"
+        echo "Data directory:    $DATA_DIR"
         { current_without_block; build_block; } | crontab -
         echo "Installed the LIMS sync + archive schedule:"
         echo
