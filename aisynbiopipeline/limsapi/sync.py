@@ -16,8 +16,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-import schedule
-
 from .config import load_config
 from .sheets import SheetsReader
 from .database import DatabaseManager
@@ -434,6 +432,9 @@ def _daemon_worker(config: Dict[str, Any]) -> None:
         config: Configuration dict
     """
     global _daemon_running
+
+    import schedule  # deprecated daemon only; imported lazily so the cron/CLI
+                     # path doesn't require the `schedule` package.
 
     logger = configure_logging(config)
     interval_minutes = config['sync']['interval_minutes']

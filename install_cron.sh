@@ -20,9 +20,19 @@ WRAPPER="$SCRIPT_DIR/lims_cron.sh"
 CONFIG_JSON="$SCRIPT_DIR/aisynbiopipeline/limsapi/config.json"
 
 # Interpreter baked into the crontab so lims_cron.sh uses this host's env.
-# Defaults to the `python` on PATH (run this with aisynbio_env activated), or
-# override explicitly:  LIMS_PYTHON=/path/to/python ./install_cron.sh
-PYTHON_BIN="${LIMS_PYTHON:-$(command -v python 2>/dev/null || true)}"
+# Pick the first candidate that can actually import the project deps, so a bare
+# `./install_cron.sh` (no env activated) can't silently bake a Python that lacks
+# pandas/gspread. Override explicitly with LIMS_PYTHON=/path/to/python.
+_DEP_CHECK='import pandas, gspread, jsonschema, googleapiclient'
+_ENV_PYTHON="/scratch/fliu/hub_home/nspahr/.local/share/mamba/envs/aisynbio_env/bin/python"
+PYTHON_BIN=""
+for _cand in "${LIMS_PYTHON:-}" "$(command -v python 2>/dev/null || true)" "$_ENV_PYTHON"; do
+    [[ -n "$_cand" && -x "$_cand" ]] || continue
+    if "$_cand" -c "$_DEP_CHECK" >/dev/null 2>&1; then
+        PYTHON_BIN="$_cand"
+        break
+    fi
+done
 
 # Shared data dir = parent of db_path in config.json (this host's mountpoint for
 # the shared filesystem). Used to place the cron log; validated before install.
@@ -34,7 +44,6 @@ CRON_LOG="${DATA_DIR:-/storage/synbio}/cron.log"
 
 # --- Schedule (standard cron: minute hour day-of-month month day-of-week) ----
 CRON_SYNC="30 */2 * * *"    # sync every 2 hours at :30 (off the archive minutes)
-CRON_HOURLY="0 * * * *"     # hourly archive on the hour
 CRON_DAILY="5 0 * * *"      # daily archive at 00:05
 CRON_WEEKLY="10 0 * * 0"    # weekly archive Sunday 00:10
 CRON_MONTHLY="15 0 1 * *"   # monthly archive on the 1st at 00:15
@@ -52,7 +61,6 @@ PATH=/usr/bin:/bin:/usr/sbin:/sbin
 MAILTO=""
 LIMS_PYTHON=$PYTHON_BIN
 $CRON_SYNC $WRAPPER sync >> $CRON_LOG 2>&1
-$CRON_HOURLY $WRAPPER archive create --type hourly >> $CRON_LOG 2>&1
 $CRON_DAILY $WRAPPER archive create --type daily >> $CRON_LOG 2>&1
 $CRON_WEEKLY $WRAPPER archive create --type weekly >> $CRON_LOG 2>&1
 $CRON_MONTHLY $WRAPPER archive create --type monthly >> $CRON_LOG 2>&1
@@ -81,7 +89,8 @@ case "${1:-install}" in
             exit 1
         fi
         if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
-            echo "Error: no usable Python interpreter found: '${PYTHON_BIN:-}'" >&2
+            echo "Error: found no Python that can import the project deps" >&2
+            echo "($_DEP_CHECK)." >&2
             echo "Activate the project env first, or run:" >&2
             echo "    LIMS_PYTHON=/path/to/env/bin/python ./install_cron.sh" >&2
             exit 1
