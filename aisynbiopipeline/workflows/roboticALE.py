@@ -261,52 +261,51 @@ def compute_background(df):  # DOUBLE CHECK THAT THIS IS CORRECT!!!
     return df
 
 
-## FIX:
-# def compute_inoculation(df, first_reading_is_blank=False):
-#     """
-#     Compute innoculation timestamp based on the oldest timestamp
-#     or based on the second oldest timestamp if the first reading
-#     was taken before inoculation.
-#     Then, using the incoulation timestamp as 0 h reading,
-#     compute the timepoint in hours for each timestamp.
-#     """
+def compute_inoculation(df, first_reading_is_blank=False):
+    """
+    Assign an inoculation timestamp to each reading and compute the
+    timepoint (in hours) of every reading relative to it.
 
-#     def inoc_time_function(x):
-#         return x.min()
-    
-#     if first_reading_is_blank:
-#         def inoc_time_function(x):
-#             if len(x.drop_duplicates()) == 1:
-#                 return x.drop_duplicates().iloc[0]
-#             else:
-#                 return x.drop_duplicates().sort_values().iloc[1]
-    
-#     df['innoculation_timestamp'] = pd.NA
-#     df.loc[
-#         ~(pd.isna(df['transfer'])),
-#         'innoculation_timestamp'
-#         ] = df.groupby(
-#             ['series','plate_index', 'transfer']
-#             )['datetime'].transform(inoc_time_function)
+    The inoculation timestamp is the oldest timestamp within each
+    ``(experiment, series, Name, transfer)`` group. When
+    ``first_reading_is_blank`` is True the oldest reading of each group
+    was taken before inoculation (a blank/media reading) and is skipped:
+    the second-oldest timestamp is used as the inoculation timestamp
+    instead. Blank readings therefore end up with a negative timepoint.
+    Groups with only a single timestamp fall back to that timestamp.
+    """
 
-#     def calc_timepoint(time_0, time):
-        
-#         if not pd.isna(time_0):
-#             timepoint = (
-#                 datetime.fromisoformat(time) - datetime.fromisoformat(time_0)
-#             ).total_seconds()/3600
-    
-#         else:
-#             timepoint = pd.NA
-    
-#         return timepoint
-    
-#     df['timepoint'] =  df.apply(
-#         lambda x: calc_timepoint(x['innoculation_timestamp'], x['datetime']),
-#         axis=1
-#     )
+    if first_reading_is_blank:
+        def inoc_time_function(x):
+            unique_times = x.drop_duplicates().sort_values()
+            # Can't skip the first reading if it's the only one.
+            if len(unique_times) == 1:
+                return unique_times.iloc[0]
+            return unique_times.iloc[1]
+    else:
+        def inoc_time_function(x):
+            return x.min()
 
-#     return df
+    df['inoculation_timestamp'] = pd.NA
+    live_t = df['reading'] != 'contam'  # Only consider readings taken at or after inoculation
+    df.loc[live_t, 'inoculation_timestamp'] = df.loc[live_t].groupby(
+            ['experiment', 'series', 'Name', 'transfer']
+            )['datetime'].transform(inoc_time_function)
+
+    def calc_timepoint(time_0, time):
+        # time_0/time may be pandas Timestamps or ISO-format strings;
+        # pd.Timestamp handles both.
+        if pd.isna(time_0) or pd.isna(time):
+            return pd.NA
+        delta = pd.Timestamp(time) - pd.Timestamp(time_0)
+        return delta.total_seconds() / 3600
+
+    df['timepoint'] = df.apply(
+        lambda x: calc_timepoint(x['inoculation_timestamp'], x['datetime']),
+        axis=1
+    )
+
+    return df
 
 
 def correct_timestamps(df, path_to_ats_folder):

@@ -63,6 +63,9 @@ def plot_OD_replicates(df, subtract_background=False, blank=False,
     """
 
     # ===== DATA VALIDATION =====
+    if len(df) == 0 :
+        raise ValueError("There is no data in the input df.")
+    
     if len(df.groupby(['Plotting_group_number', 'Plotting_group_name'])) > 1:
         raise ValueError(
             f"There appear to be multiple plotting groups in dataframe. "
@@ -235,6 +238,9 @@ def plot_OD_contam(df, subtract_background=False, yscale='log',
         If dataframe contains readings other than 'contam'
     """
     # ===== DATA VALIDATION =====
+    if len(df) == 0 :
+        raise ValueError("There is no data in the input contam df.")
+    
     if len(df.groupby('reading')) > 1 or df['reading'].unique()[0] != 'contam':
         raise ValueError("This function is designed for 'contam' readings only.")
 
