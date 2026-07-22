@@ -134,6 +134,11 @@ def parse_args():
         help='Transfer source_path as a single file',
     )
     p_tx.add_argument('--no-verify-checksum', action='store_true', help='Disable post-transfer checksum verification')
+    p_tx.add_argument(
+        '--notify-on-success', action='store_true',
+        help='Send a Globus email on successful transfers too '
+             '(default: only email on failure/inactive)',
+    )
     p_tx.add_argument('--no-wait', action='store_true', help='Submit and exit without waiting for completion')
     p_tx.add_argument('--poll-interval', type=int, default=30, help='Seconds between status polls while waiting (default: 30)')
     p_tx.add_argument('--allow-any-dest', action='store_true', help=f'Permit destination paths outside {ALLOWED_DEST_PREFIX}')
@@ -299,6 +304,11 @@ def run_transfer(args, logger):
         label=label,
         sync_level=args.sync_level,
         verify_checksum=not args.no_verify_checksum,
+        # Only email on problems. Globus defaults all three to True, which is
+        # why every successful scheduled transfer sent a notification.
+        notify_on_succeeded=args.notify_on_success,
+        notify_on_failed=True,
+        notify_on_inactive=True,
     )
 
     # Recursive by default: Globus copies the entire contents of the source
