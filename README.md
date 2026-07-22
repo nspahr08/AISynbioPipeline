@@ -7,6 +7,7 @@ Autonomous lab system for adaptive lab evolution of ADP1.
 AISynbioPipeline is a framework for managing an autonomous lab system that supports adaptive lab evolution experiments. The system provides:
 
 - **LIMS Integration**: Synchronization between Google Sheets and local SQLite database
+- **Robotic OD Data Pipeline**: Scheduled Globus transfer of raw plate-reader data plus automated processing and upload to Google Drive
 - **Workflow Management**: Tools for running and managing lab automation workflows
 - **CLI Interface**: Command-line tools for system operations
 
@@ -269,6 +270,104 @@ restore_archive('lims_daily_20231115.db.gz')
 deleted = cleanup_archives()
 print(f"Deleted {sum(deleted.values())} archives")
 ```
+
+## Robotic OD Data Pipeline
+
+Two scripts in `aisynbiopipeline/pipeline/` automate ingest and processing of
+robotic plate-reader OD data end to end:
+
+- **`globus_transfer.py`** — transfers raw OD data from a Globus source
+  collection into synbio scratch (`/scratch1/fliu/hub_scratch/synbio/...`) via
+  the Globus Transfer API.
+- **`process_robotic_od.py`** — runs the full OD processing workflow (verify +
+  extract raw files → map plate layout → background → timestamp correction →
+  inoculation/timepoints → write processed CSV → per-plate growth-curve
+  PDFs/PNGs) and uploads the results to Google Drive.
+
+On a schedule these run via cron, with `process_robotic_od.py` gated on a
+*successful* transfer so it never processes partial or failed data.
+
+### Prerequisites
+
+- **Globus Connect Personal** running on this host (it serves the transfer
+  destination). Start it with `./globusconnectpersonal -start &`.
+- A registered **Globus Native App** Client ID (register at
+  https://app.globus.org/settings/developers). Provide it via `--client-id` or
+  the `GLOBUS_CLIENT_ID` environment variable.
+- Google Drive credentials configured (same setup used elsewhere in the
+  project; see `aisynbiopipeline/limsapi/config.json`).
+
+### One-time Globus login
+
+Authentication uses a stored refresh token (written to
+`~/.globus_aisynbio_tokens.json`), so you log in once and every later run —
+including cron — is unattended:
+
+```bash
+export GLOBUS_CLIENT_ID=<your-native-app-client-id>
+PY=/path/to/aisynbio_env/bin/python
+
+# Interactive, paste-the-code login. Add --data-access for a GCS v5 source
+# collection (a transfer will tell you if this consent is required).
+$PY aisynbiopipeline/pipeline/globus_transfer.py login --data-access <SRC_COLLECTION_UUID>
+```
+
+### Manual runs
+
+```bash
+# Transfer the entire contents of a source directory into synbio scratch.
+# 'local' resolves to this host's Globus Connect Personal endpoint.
+$PY aisynbiopipeline/pipeline/globus_transfer.py transfer \
+    <SRC_COLLECTION_UUID> local \
+    /path/on/source/  /scratch1/fliu/hub_scratch/synbio/<dest_dir>
+
+# Process the transferred data and upload results to a Google Drive folder.
+$PY aisynbiopipeline/pipeline/process_robotic_od.py \
+    <data_dir> <plate_layout.csv> <output_dir> <gdrive_folder_id> \
+    --first-reading-is-blank
+```
+
+Useful flags:
+
+- `globus_transfer.py transfer`: `--sync-level {exists,size,mtime,checksum}`
+  (default `checksum`), `--no-recursive`, `--no-wait`, `--poll-interval`,
+  `--allow-any-dest`, `--notify-on-success` (by default Globus only emails on
+  failure).
+- `process_robotic_od.py`: `--first-reading-is-blank`, `--skip-inoculation`,
+  `--experiment`, `--ats-folder`, `--no-upload`.
+
+> **Destination ownership:** transfers write as the user running Globus Connect
+> Personal. Point `dest_path` at a directory that user owns; writing into a
+> directory owned by someone else fails with a GridFTP "Permission denied".
+
+### Scheduling (cron)
+
+`install_pipeline_cron.sh` installs an idempotent, managed crontab block that
+runs the transfer at the top of every even hour and processing at :30, mirroring
+the LIMS cron setup. `pipeline_cron.sh` is the cron-safe wrapper it invokes.
+
+```bash
+# 1. Edit the JOB ARGUMENTS block in install_pipeline_cron.sh (source/dest
+#    endpoints and paths, plate layout, output dir, Google Drive folder id).
+#    To change WHEN things run, edit the CRON_* variables.
+# 2. Export the Client ID and install:
+export GLOBUS_CLIENT_ID=<your-native-app-client-id>
+./install_pipeline_cron.sh          # install / update the schedule
+./install_pipeline_cron.sh --show   # preview the crontab block
+./install_pipeline_cron.sh --uninstall
+```
+
+**Transfer-completion dependency:** the wrapper records a success marker after a
+completed transfer, and the processing job runs only when that marker is newer
+than its own last-success marker. So processing skips cleanly when the current
+transfer is still running, failed, or produced nothing new, and retries
+automatically on the next cycle. A non-blocking per-job lock prevents
+overlapping runs from piling up. Markers and locks live in
+`PIPELINE_STATE_DIR` (default `~/.aisynbio_pipeline_state`); the wrapper also
+skips cleanly if synbio scratch isn't mounted.
+
+Cron stdout/stderr goes to `/scratch1/fliu/hub_scratch/synbio/pipeline_cron.log`;
+each script additionally writes `aisynbiopipeline/pipeline/pipeline.log`.
 
 ## Jupyter Notebooks
 
@@ -656,15 +755,24 @@ aisynbiopipeline/
 │   ├── sync.py           # Synchronization daemon
 │   ├── archive.py        # Archive management
 │   └── query.py          # Query API
+├── pipeline/         # Standalone, cron-friendly pipeline scripts
+│   ├── globus_transfer.py       # Globus Transfer API wrapper (login/transfer)
+│   └── process_robotic_od.py    # Robotic OD processing + Google Drive upload
 ├── tasks/            # Celery task definitions
 │   └── kbase_tasks.py    # KBase I/O tasks
 ├── workflows/        # Analysis workflows (Celery-agnostic)
 │   ├── kbase_io.py       # KBase download/upload logic
-│   └── blast.py          # BLAST analysis workflows
+│   ├── blast.py          # BLAST analysis workflows
+│   ├── roboticALE.py     # Robotic OD extraction/processing functions
+│   └── growth_curve_plotting.py  # OD growth-curve plotting
 ├── data/             # Data management utilities
 │   ├── setup_data_structure.py  # Data directory setup
 │   └── __init__.py              # Path helper functions
 └── celery_app.py     # Celery application configuration
+
+# Repo-root helpers for the OD pipeline cron schedule:
+#   pipeline_cron.sh           # cron-safe wrapper (transfer / process-od)
+#   install_pipeline_cron.sh   # idempotent cron installer
 ```
 
 ## License
