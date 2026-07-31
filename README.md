@@ -282,7 +282,8 @@ robotic plate-reader OD data end to end:
 - **`process_robotic_od.py`** — runs the full OD processing workflow (verify +
   extract raw files → map plate layout → background → timestamp correction →
   inoculation/timepoints → write processed CSV → per-plate growth-curve
-  PDFs/PNGs) and uploads the results to Google Drive.
+  PDFs/PNGs) and uploads the results to Google Drive. The plate layout is
+  optional: pass `-` to process without one and get one growth curve per well.
 
 On a schedule these run via cron, with `process_robotic_od.py` gated on a
 *successful* transfer so it never processes partial or failed data.
@@ -325,7 +326,18 @@ $PY aisynbiopipeline/pipeline/globus_transfer.py transfer \
 $PY aisynbiopipeline/pipeline/process_robotic_od.py \
     <data_dir> <plate_layout.csv> <output_dir> <gdrive_folder_id> \
     --first-reading-is-blank
+
+# Process without a plate layout: pass "-" for <plate_layout>. This synthesizes
+# one plotting group per well, producing one growth curve per well per plate.
+$PY aisynbiopipeline/pipeline/process_robotic_od.py \
+    <data_dir> - <output_dir> <gdrive_folder_id>
 ```
+
+> **Processing without a plate layout:** pass `-` as the `plate_layout`
+> argument. Sample annotations are unavailable, so the script synthesizes a
+> per-well layout (each well is its own sample and plotting group) and emits one
+> growth curve per well per plate. Background stays unsubtracted, and the
+> contamination/blank sub-plots are skipped.
 
 Useful flags:
 

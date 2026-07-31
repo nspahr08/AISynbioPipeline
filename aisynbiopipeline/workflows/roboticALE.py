@@ -97,6 +97,49 @@ def load_and_verify_plate_layout(path, write_to=None):
     return df
 
 
+def build_per_well_layout(data):
+    """
+    Synthesize a minimal plate layout from the data itself.
+
+    Used when no plate_layout file is supplied: each (plate, well) becomes its
+    own sample (``Name``) and its own plotting group, so downstream processing
+    and plotting run unchanged and produce one growth curve per well per plate.
+
+    Args:
+        data: The extracted robotic OD dataframe (output of
+            ``extract_robotic_od_data_to_df``), containing at least the
+            ``series`` (plate) and ``well`` columns.
+
+    Returns:
+        pandas.DataFrame: A layout dataframe with all
+        ``REQUIRED_PLATE_LAYOUT_COLUMNS``, ready for
+        ``map_plate_layout_to_data``.
+    """
+    wells = (
+        data[['series', 'well']]
+        .drop_duplicates()
+        .sort_values(['series', 'well'])
+        .reset_index(drop=True)
+    )
+    tag = wells['series'].astype(str) + '_' + wells['well'].astype(str)
+    return pd.DataFrame({
+        'Name': tag,
+        'Experiment': pd.NA,
+        'Type': pd.NA,
+        'Condition': pd.NA,
+        'Strain_name': tag,  # non-null so no well is treated as a media/background well
+        'Transforming_DNA': pd.NA,
+        'Protocol': pd.NA,
+        'Parent_sample': pd.NA,
+        'Replicate_samples': pd.NA,
+        'Plate_name': wells['series'],
+        'Microtiter_plate_well': wells['well'],
+        'Plotting_group_number': range(len(wells)),
+        'Plotting_group_name': wells['well'],
+        'Blank': False,
+    })
+
+
 def load_and_verify_robotic_od_data(data_folder, file_name_pattern, destination_folder=None, copy_to_destination=False):
     """
     Load and verify robotic OD data files.
