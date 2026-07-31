@@ -19,18 +19,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WRAPPER="$SCRIPT_DIR/pipeline_cron.sh"
 
 # --- Schedule (standard cron: minute hour day-of-month month day-of-week) ----
-CRON_GLOBUS="0,10,20,30,40,50 * * * *"       # Globus transfer at :00 of every even hour
-CRON_PROCESS_OD="5,15,25,35,45,55 * * * *"  # robotic OD processing at :30 of every even hour
-# CRON_GLOBUS="0 */2 * * *"       # Globus transfer at :00 of every even hour
-# CRON_PROCESS_OD="30 */2 * * *"  # robotic OD processing at :30 of every even hour
+# CRON_GLOBUS="0,10,20,30,40,50 * * * *"       # Globus transfer at 0,10,20,30,40,50 min of every hour (for testing)
+# CRON_PROCESS_OD="5,15,25,35,45,55 * * * *"  # robotic OD processing at 5,15,25,35,45,55 min of every hour (for testing)
+CRON_GLOBUS="0 */2 * * *"       # Globus transfer at :00 of every even hour
+CRON_PROCESS_OD="30 */2 * * *"  # robotic OD processing at :30 of every even hour
 # -----------------------------------------------------------------------------
 
 # === JOB ARGUMENTS (EDIT THESE) ==============================================
 # Globus transfer: source_endpoint dest_endpoint source_path dest_path
 GLOBUS_SOURCE_ENDPOINT="391a895a-05b8-4e6a-a48a-fde1aa727769"  # source collection UUID
 GLOBUS_DEST_ENDPOINT="local"                                    # 'local' = this host's GCP endpoint
-GLOBUS_SOURCE_PATH="/test_sync_to_poplar/"                                  # e.g. /path/on/source/
-GLOBUS_DEST_PATH="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/downloads/testing_od_transfer_and_processing"                                    # under /scratch1/fliu/hub_scratch/synbio/
+GLOBUS_SOURCE_PATH="/REAL_RUNS/LiveExperimentDataOutput/"                                  # e.g. /path/on/source/
+GLOBUS_DEST_PATH="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/downloads/TFMN5"                                    # under /scratch1/fliu/hub_scratch/synbio/
 GLOBUS_EXTRA_FLAGS="--poll-interval 300"                        # e.g. --poll-interval 300, --no-wait
 
 # Globus Native App Client ID (needed by globus_transfer.py). Captured from the
@@ -38,10 +38,11 @@ GLOBUS_EXTRA_FLAGS="--poll-interval 300"                        # e.g. --poll-in
 GLOBUS_CLIENT_ID="${GLOBUS_CLIENT_ID:-52c5931a-75b5-480c-8c0c-1c28a69817e4}"
 
 # Robotic OD processing: data_dir plate_layout output_dir gdrive_folder_id
-OD_DATA_DIR="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/downloads/testing_od_transfer_and_processing"          # directory with robotic OD .txt files
-OD_PLATE_LAYOUT="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/robotic_od_data/TFMN4_04-09-26/plate_layout.csv"      # path to plate_layout.csv
+OD_DATA_DIR="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/downloads/TFMN5"          # directory with robotic OD .txt files
+OD_PLATE_LAYOUT="-"
+# OD_PLATE_LAYOUT="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/robotic_od_data/TFMN4_04-09-26/plate_layout.csv"      # path to plate_layout.csv
 OD_OUTPUT_DIR="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/downloads/testing_od_transfer_and_processing"        # where processed CSV + plots are written
-OD_GDRIVE_FOLDER_ID="187N5CyOKlcAZWDEFXfr4Bdz7mirwuWIs"  # Google Drive folder ID to upload results to
+OD_GDRIVE_FOLDER_ID="18lNLMIsAYf5X5ViiVmMQj2L78iU9eCi5"  # Google Drive folder ID to upload results to
 OD_EXTRA_FLAGS=""                # e.g. --first-reading-is-blank, --skip-inoculation
 # =============================================================================
 

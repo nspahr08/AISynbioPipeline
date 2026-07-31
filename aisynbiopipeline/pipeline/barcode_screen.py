@@ -2,15 +2,16 @@
 """Barcode extractor for amplicon or WGS reads.
 
 Usage:
-  barcode_screen.py <fastq_folder> <extracted_dir> <summary_dir> [fnames_must_contain] [--library LIBRARY]
+  barcode_screen.py <reads_folder> <extracted_dir> <summary_dir> [fnames_must_contain] [--library LIBRARY]
 
-This script scans FASTQ files for anchor sequences, recovers barcode pairs
-(verA, verB), and writes per-read results to CSV. The verA/verB barcode
+This script scans FASTQ and FASTA files for anchor sequences, recovers barcode
+pairs (verA, verB), and writes per-read results to CSV. The verA/verB barcode
 reference is pulled from the Library_candidates table in the LIMS database
 (rows where Library == the --library value, default 'verABLib_large').
-Extracted reads with barcodes are written to extracted_dir/.
+Extracted reads with barcodes are written to extracted_dir/ (in the same format
+as their input file: FASTQ in -> FASTQ out, FASTA in -> FASTA out).
 Combined results and summary stats are written to summary_dir/.
-Only processes fastq files containing the optional fnames_must_contain string.
+Only processes read files containing the optional fnames_must_contain string.
 
 Output CSV columns: sample_name, read_id, verA, verB
 """
@@ -59,7 +60,7 @@ def configure_logging():
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Extract amplicon barcodes from trimmed reads')
-    parser.add_argument('fastq_folder', help='Path to folder containing FASTQ files')
+    parser.add_argument('fastq_folder', help='Path to folder containing FASTQ and/or FASTA files')
     parser.add_argument('extracted_dir', help='Path to output folder for extracted reads and per-fastq CSVs')
     parser.add_argument('summary_dir', help='Path to output folder for combined CSV and summary stats')
     parser.add_argument('fnames_must_contain', nargs='?', default=None, help='Optional string to filter fastq filenames; only files containing this string are processed')
@@ -71,22 +72,36 @@ def reverse_complement(seq: str) -> str:
     return str(Seq(seq).reverse_complement())
 
 
+# Recognized read-file extensions, longest-first so compound (.gz) suffixes match
+# before their bare counterparts. FASTA files are quality-less; extracted reads
+# from a FASTA input are written back out as FASTA.
+FASTQ_EXTS = ['.fastq.gz', '.fq.gz', '.fastq', '.fq']
+FASTA_EXTS = ['.fasta.gz', '.fa.gz', '.fna.gz', '.fasta', '.fa', '.fna']
+READ_EXTS = FASTQ_EXTS + FASTA_EXTS
+
+
+def detect_format(path: Path) -> str:
+    """Return 'fastq' or 'fasta' based on the file's extension.
+
+    Defaults to 'fastq' for unrecognized extensions (backwards-compatible).
+    """
+    name = path.name.lower()
+    if any(name.endswith(ext) for ext in FASTA_EXTS):
+        return 'fasta'
+    return 'fastq'
+
+
 def append_suffix_to_filename(path: Path, suffix: str) -> Path:
     name = path.name
-    if name.endswith('.fastq.gz'):
-        return path.with_name(name.replace('.fastq.gz', f'{suffix}.fastq.gz'))
-    if name.endswith('.fq.gz'):
-        return path.with_name(name.replace('.fq.gz', f'{suffix}.fq.gz'))
-    if name.endswith('.fastq'):
-        return path.with_name(name.replace('.fastq', f'{suffix}.fastq'))
-    if name.endswith('.fq'):
-        return path.with_name(name.replace('.fq', f'{suffix}.fq'))
+    for ext in READ_EXTS:
+        if name.endswith(ext):
+            return path.with_name(name[: -len(ext)] + suffix + ext)
     return path.with_name(name + suffix)
 
 
 def base_name_without_fastq_ext(path: Path) -> str:
     name = path.name
-    for ext in ['.fastq.gz', '.fq.gz', '.fastq', '.fq']:
+    for ext in READ_EXTS:
         if name.endswith(ext):
             return name[: -len(ext)]
     return path.stem
@@ -165,7 +180,11 @@ def process_fastq(
     logger: logging.Logger,
 ) -> tuple[list[dict], int, int, float, float, str]:
     fname = fq.name
-    sample_name = fname.replace('.fastq.gz', '').replace('.fq.gz', '').replace('.fastq', '').replace('.fq', '').replace('_R1', '').replace('_illumina', '').replace('_trimmed', "").replace('_R2', '').rstrip('_')
+    fmt = detect_format(fq)
+    sample_name = base_name_without_fastq_ext(fq)
+    for marker in ('_R1', '_R2', '_illumina', '_trimmed'):
+        sample_name = sample_name.replace(marker, '')
+    sample_name = sample_name.rstrip('_')
     total_reads = 0
     anchors_found = 0
     total_bases = 0
@@ -173,14 +192,14 @@ def process_fastq(
     matched_records = []
     matched_reads = []
 
-    logger.info('Processing sample %s', fname)
+    logger.info('Processing sample %s (%s)', fname, fmt)
     try:
         if str(fq).endswith('.gz'):
             handle = gzip.open(str(fq), 'rt')
         else:
             handle = open(str(fq), 'r')
         with handle:
-            for rec in SeqIO.parse(handle, 'fastq'):
+            for rec in SeqIO.parse(handle, fmt):
                 total_reads += 1
                 read_len = len(rec.seq)
                 total_bases += read_len
@@ -208,12 +227,12 @@ def process_fastq(
     logger.info('Sample %s: total_reads=%d anchors_found=%d', sample_name, total_reads, anchors_found)
 
     if matched_reads:
-        output_fastq = append_suffix_to_filename(extract_dir / fname, '_BCextracted')
+        output_reads = append_suffix_to_filename(extract_dir / fname, '_BCextracted')
         csv_base = base_name_without_fastq_ext(Path(fname))
         output_csv = extract_dir / f'{csv_base}_BCextracted.csv'
-        SeqIO.write(matched_reads, str(output_fastq), 'fastq')
+        SeqIO.write(matched_reads, str(output_reads), fmt)
         pd.DataFrame.from_records(matched_records).to_csv(output_csv, index=False)
-        logger.info('Wrote %d extracted reads to %s and records to %s', len(matched_reads), output_fastq, output_csv)
+        logger.info('Wrote %d extracted reads to %s and records to %s', len(matched_reads), output_reads, output_csv)
 
     negative_reads = total_reads - anchors_found
     negative_bases = total_bases - barcode_bases
@@ -241,13 +260,16 @@ def main():
     extracted_dir.mkdir(parents=True, exist_ok=True)
     summary_dir.mkdir(parents=True, exist_ok=True)
 
-    fastq_files = sorted(fastq_folder.glob('*.fastq*'))
+    fastq_files = sorted(
+        f for f in fastq_folder.glob('*')
+        if f.is_file() and any(f.name.lower().endswith(ext) for ext in READ_EXTS)
+    )
     if fnames_filter:
         fastq_files = [f for f in fastq_files if fnames_filter in f.name]
     if not fastq_files:
-        raise FileNotFoundError(f'No fastq files found in folder: {fastq_folder}')
+        raise FileNotFoundError(f'No fastq/fasta files found in folder: {fastq_folder}')
 
-    logger.info('Found %d fastq files in %s', len(fastq_files), fastq_folder)
+    logger.info('Found %d read files in %s', len(fastq_files), fastq_folder)
 
     # load barcodes from the Library_candidates table
     try:
