@@ -2,12 +2,13 @@
 #
 # LIMS CLI Wrapper Script
 #
-# This script automatically activates the Python environment (if needed)
-# before running LIMS CLI commands.
+# This script resolves the project's Python interpreter (no manual environment
+# activation required) and runs the LIMS CLI. Scheduled syncing/archiving is
+# handled by cron (see install_cron.sh), not a daemon.
 #
 # Usage:
 #   ./lims.sh sync
-#   ./lims.sh daemon start
+#   ./lims.sh status
 #   ./lims.sh query samples --filter status=active
 #
 

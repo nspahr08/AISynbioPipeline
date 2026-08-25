@@ -26,17 +26,18 @@ The easiest way to set up the environment is using the provided setup script:
 git clone <repository-url>
 cd AISynbioPipeline
 
-# Create conda environment with all dependencies
+# Create the environment with all dependencies
 ./setup_env.sh
-
-# Activate the environment
-source activate.sh
 ```
 
 The setup script will:
-- Create a conda environment named `aisynbiopipeline`
+- Create the environment from `environment.yml` (`aisynbio_env`)
 - Install all required dependencies
-- Generate an `activate.sh` script for easy environment activation
+
+You do **not** need to activate the environment to use the CLI — the `lims.sh`
+wrapper locates the environment's Python interpreter automatically (see
+[CLI Usage](#cli-usage)). To work in the environment interactively, run
+`conda activate aisynbio_env` (or select that kernel in Jupyter).
 
 ### Manual Setup
 
@@ -59,7 +60,7 @@ The LIMS API provides a Python interface for synchronizing data from Google Shee
 
 ### Features
 
-- **Automatic Sync**: Continuously monitors Google Sheets and mirrors data locally
+- **Scheduled Sync**: Mirrors Google Sheets to a local SQLite database on a cron schedule
 - **Soft Deletes**: Marks deleted rows instead of removing them
 - **Automatic Archival**: Hourly, daily, weekly, and monthly backups with retention policies
 - **Read-Only API**: Query interface for accessing synchronized data
@@ -108,18 +109,20 @@ for row in results:
 
 The `lims` command provides access to all LIMS functionality.
 
-**Wrapper Script**: Use `lims.sh` which automatically activates your Python environment and runs the CLI:
+**Wrapper Script**: Use `lims.sh`, which finds the right Python interpreter and runs the CLI:
 
 ```bash
 ./lims.sh sync
-./lims.sh daemon start
+./lims.sh status
 ./lims.sh query samples --filter status=active
 ```
 
 The wrapper script will:
-- Check if a virtual environment is already activated
-- Automatically source `activate.sh` if found and not activated
-- Run the LIMS CLI directly with Python (no installation required)
+- Use the project's `aisynbio_env` interpreter by absolute path, falling back to
+  an already-activated environment's `python`, then to whatever `python` is on
+  `PATH`
+- Set `PYTHONPATH` to the project root
+- Run the LIMS CLI directly (no `pip install` required)
 
 #### Sync Operations
 
@@ -153,6 +156,55 @@ edit the `archive` section of `aisynbiopipeline/limsapi/config.json`.
 > They now print a pointer to the cron workflow. All sync/archive operations
 > (manual or scheduled) share a single on-disk lock, so two can never run at once.
 
+#### Multi-host deployment (two checkouts)
+
+Scheduled sync/archive and manual notebook syncs run on **different hosts** that
+mount the same synbio data directory under **different paths**:
+
+| Host | Role | Data path (in its `config.json`) | cron? |
+|------|------|----------------------------------|-------|
+| **poplar** | persistent host; runs the scheduled jobs | `/scratch1/fliu/hub_scratch/synbio` | yes (systemd + `crond`) |
+| **seed** | JupyterHub; manual syncs from notebooks | `/storage/synbio` | no (ephemeral container, no `crond`) |
+
+Both point at the **same physical files**, and every sync/archive — on either
+host, manual or scheduled — takes the same shared `.lims.lock`, so they can never
+collide.
+
+The catch: the per-host paths live in `aisynbiopipeline/limsapi/config.json`,
+which is **git-ignored** (as is everything in `credentials/`). Git branches do
+*not* carry these files, so a single checkout can only ever hold one host's
+config. The fix is **two separate working copies (clones), not two branches** —
+each host gets its own checkout with its own `config.json` and `credentials/`,
+both tracking the **same branch** (there's no reason for them to diverge).
+
+**Setting up the second checkout (e.g. on poplar):**
+
+```bash
+POPLAR_REPO=$HOME/code/AISynbioPipeline
+
+# 1. Clone (or, if the host can't auth to GitHub, `cp -r` the existing checkout
+#    from the shared mount) and check out the SAME branch used on the other host.
+git clone git@github.com:nspahr08/AISynbioPipeline.git "$POPLAR_REPO"
+cd "$POPLAR_REPO" && git checkout dev
+
+# 2. credentials/* is git-ignored — copy the secret files in manually.
+SRC=/scratch/fliu/hub_home/nspahr/code/AISynbioPipeline/credentials
+cp "$SRC"/service_account.json "$SRC"/credentials_oauth.json \
+   "$SRC"/token.json "$SRC"/plasmidsaurus.json credentials/
+
+# 3. Put this host's config.json in place with ITS data paths
+#    (poplar → /scratch1/fliu/hub_scratch/synbio; seed → /storage/synbio).
+
+# 4. Verify, then install cron FROM THIS checkout so it references these paths.
+./lims.sh status
+./install_cron.sh
+```
+
+> **Maintenance:** because each host has its own clone, code changes must be
+> pulled into **both** checkouts. Run `./install_cron.sh` only on the persistent
+> host that actually has `crond` (poplar); on the JupyterHub host it's a no-op.
+> The same two-checkout model applies to the robotic-OD pipeline cron
+> (`install_pipeline_cron.sh`).
 
 #### Query Operations
 
@@ -197,22 +249,21 @@ lims archive cleanup
 #### Sync Functions
 
 ```python
-from aisynbiopipeline.limsapi import (
-    sync_all_sheets,
-    start_sync_daemon,
-    stop_sync_daemon,
-    get_sync_status
-)
+from aisynbiopipeline.limsapi import sync_all_sheets, get_sync_status
 
-# Manual sync
+# Manual sync (safe to call anytime — it takes the shared lock and skips
+# cleanly if a scheduled sync/archive is already running)
 result = sync_all_sheets()
 print(f"Synced {result['tables_synced']} tables")
 
-# Background daemon
-start_sync_daemon()  # Starts in background
+# Check the last recorded sync status (read from the on-disk status file,
+# so it reflects scheduled cron runs too)
 status = get_sync_status()
-stop_sync_daemon()
 ```
+
+> Scheduled syncing is handled by cron, not an in-process daemon (see
+> [Sync Operations](#sync-operations)). The old `start_sync_daemon` /
+> `stop_sync_daemon` functions are deprecated.
 
 #### Query Functions
 
@@ -388,8 +439,8 @@ Example notebooks are provided in the `notebooks/` directory to help you get sta
 ### Running Notebooks
 
 ```bash
-# Activate the environment
-source activate.sh
+# Activate the environment (or select the aisynbio_env kernel in JupyterHub)
+conda activate aisynbio_env
 
 # Start Jupyter notebook
 jupyter notebook notebooks/
@@ -764,7 +815,7 @@ aisynbiopipeline/
 │   ├── config.py         # Configuration management
 │   ├── sheets.py         # Google Sheets integration
 │   ├── database.py       # SQLite database management
-│   ├── sync.py           # Synchronization daemon
+│   ├── sync.py           # Synchronization logic (run via cron)
 │   ├── archive.py        # Archive management
 │   └── query.py          # Query API
 ├── pipeline/         # Standalone, cron-friendly pipeline scripts

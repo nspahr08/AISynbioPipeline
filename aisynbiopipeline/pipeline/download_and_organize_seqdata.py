@@ -77,8 +77,11 @@ def get_item_access_token() -> str:
 def rename_plasmidsaurus_read_file(filename: str) -> str:
     parts = filename.split('_')
     if len(parts) < 3:
+        logger.warning('Original file names are not in expected Plasmidsaurus format. Keeping original names.')
         return filename
-    return '_'.join(parts[2:])
+    newname = '_'.join(parts[2:])
+    newname = newname.replace("_illumina", "").replace("_nanopore", "")
+    return newname
 
 
 def spotcheck_read_duplication(reads_folder: Path, logger: logging.Logger) -> None:
@@ -137,14 +140,14 @@ def main() -> None:
     long_library = Library(seqorder, 'Nanopore', create=True) if platform in ('hybrid', 'nanopore') else None
 
     if platform == 'hybrid':
-        illumina_count = copy_reads_to_library(reads_folder, short_library, '*illumina*.fastq', logger)
-        nanopore_count = copy_reads_to_library(reads_folder, long_library, '*nanopore*.fastq', logger)
+        illumina_count = copy_reads_to_library(reads_folder, short_library, '*illumina*.fastq*', logger)
+        nanopore_count = copy_reads_to_library(reads_folder, long_library, '*nanopore*.fastq*', logger)
     elif platform == 'illumina':
-        illumina_count = copy_reads_to_library(reads_folder, short_library, '*.fastq', logger)
+        illumina_count = copy_reads_to_library(reads_folder, short_library, '*.fastq*', logger)
         nanopore_count = 0
     else:
         illumina_count = 0
-        nanopore_count = copy_reads_to_library(reads_folder, long_library, '*.fastq', logger)
+        nanopore_count = copy_reads_to_library(reads_folder, long_library, '*.fastq*', logger)
 
     logger.info('Finished organizing fastq files for %s', item_code)
     logger.info('Illumina files copied: %s', illumina_count)
