@@ -1666,7 +1666,7 @@ class Breseq:
         output_path: Union[str, Path],
         format: str = 'GENBANK',
         seq_ids: Optional[List[str]] = None,
-        polymorphism_mode: Optional[bool] = None,
+        polymorphism_mode: Optional[bool] = False,
         applied_gd: Optional[Union[str, Path]] = None,
         verbose: bool = False,
         locus: Optional[str] = None,
@@ -1683,7 +1683,7 @@ class Breseq:
             format: Output format: one of 'GENBANK', 'FASTA', 'GFF3'.
             seq_ids: Optional list of sequence IDs to keep (passed with -s).
             polymorphism_mode: If True, include polymorphic mutations. If
-                None, defaults to the run's polymorphism_prediction param.
+                False, only apply polymorphisms with 100% frequency.
             applied_gd: Optional path to write an updated GenomeDiff file
                 (gdtools --applied-gd).
             verbose: If True, pass -v to gdtools.
@@ -1712,10 +1712,6 @@ class Breseq:
 
         # output_path is mandatory; normalize to Path
         out_path = Path(output_path)
-
-        # Determine polymorphism mode default
-        if polymorphism_mode is None:
-            polymorphism_mode = bool(getattr(self.params, 'polymorphism_prediction', False))
 
         # Build command
         cmd = ['gdtools', 'APPLY']
