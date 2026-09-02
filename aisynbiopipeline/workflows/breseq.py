@@ -19,6 +19,12 @@ import csv
 import zlib
 import base64
 from aisynbiopipeline.workflows.reference_utils import get_ref_genomes_path
+from aisynbiopipeline.workflows.seq_folder_utils import (
+    SeqOrder,
+    Library,
+    SeqSample,
+    get_seqorders_path,
+)
 import shutil
 
 
@@ -624,6 +630,65 @@ def _encoded_version_name_to_params(version_name: str, prefix: str = 'breseq_par
         raise ValueError(f"Failed to decode version_name: {e}") from e
 
 
+# Mutation types considered actual mutations (as opposed to evidence records
+# like RA/JC/MC/UN) when parsing a genome diff's JSON entries.
+MUTATION_TYPES = {'SNP', 'SUB', 'DEL', 'INS', 'MOB', 'AMP', 'CON', 'INV'}
+MIN_MUTATION_FREQUENCY = 0.05
+
+# Schema for the LIMS 'Mutations' table. Mirrors the schema in
+# aisynbiopipeline/pipeline/db_update_mutations.py, which upserts the same
+# table from a CSV file - keep the two in sync if either changes.
+MUTATIONS_SCHEMA: Dict[str, str] = {
+    'Experiment': 'TEXT',
+    'Seq_sample': 'TEXT',
+    'Seqorder': 'TEXT',
+    'Breseq_registry_ID': 'TEXT',
+    'seq_id': 'TEXT',
+    'aa_new_seq': 'TEXT',
+    'aa_position': 'INTEGER',
+    'aa_ref_seq': 'TEXT',
+    'codon_new_seq': 'TEXT',
+    'codon_position': 'INTEGER',
+    'codon_ref_seq': 'TEXT',
+    'evidence_ids': 'INTEGER',
+    'frequency': 'REAL',
+    'gene_name': 'TEXT',
+    'gene_position': 'TEXT',
+    'gene_product': 'TEXT',
+    'gene_strand': 'TEXT',
+    'genes_inactivated': 'TEXT',
+    'genes_overlapping': 'TEXT',
+    'genes_promoter': 'TEXT',
+    'id': 'INTEGER',
+    'locus_tag': 'TEXT',
+    'locus_tags_inactivated': 'TEXT',
+    'locus_tags_overlapping': 'TEXT',
+    'locus_tags_promoter': 'TEXT',
+    'mutation_category': 'TEXT',
+    'new_seq': 'TEXT',
+    'position': 'INTEGER',
+    'position_end': 'INTEGER',
+    'position_start': 'INTEGER',
+    'ref_seq': 'TEXT',
+    'snp_type': 'TEXT',
+    'type': 'TEXT',
+    'codon_number': 'INTEGER',
+    'codon_position_is_indeterminate': 'TEXT',
+    'transl_table': 'INTEGER',
+    'insert_position': 'INTEGER',
+    'repeat_length': 'BOOLEAN',
+    'repeat_new_copies': 'INTEGER',
+    'repeat_ref_copies': 'INTEGER',
+    'repeat_seq': 'TEXT',
+    'size': 'TEXT',
+    'multiple_polymorphic_SNPs_in_same_codon': 'TEXT',
+}
+
+# Columns actually populated when formatting mutations from a Breseq run
+# (excludes 'Experiment', which is filled in separately, e.g. via LIMS sync).
+MUTATIONS_REQUIRED_COLUMNS = [col for col in MUTATIONS_SCHEMA if col != 'Experiment']
+
+
 class Breseq:
     """Manages breseq execution for a sample.
     
@@ -654,12 +719,15 @@ class Breseq:
         self.params = params
         self.params._validate_required()
 
+        self.seqsample = self._infer_seqsample(self.read_paths)
+
         self.reference = self.params.reference
         self.reference_path = Path(get_ref_genomes_path()) / self.params.reference
-        
+
         # Compute output folder
+        sample_name = os.path.basename(self.read_paths[0]).replace("_illumina_R1_trimmed.fastq.gz", "")
         if not breseq_folder:
-            breseq_folder = Path(self.read_paths).parent.parent / 'breseq'
+            breseq_folder = Path(self.read_paths[0]).parent.parent / 'breseq' / sample_name
         breseq_folder = Path(breseq_folder)
         self.breseq_folder = breseq_folder
         self.output_folder = breseq_folder / Path(self.params.version_name)
@@ -716,6 +784,7 @@ class Breseq:
         breseq = cls.__new__(cls)
         breseq.read_paths = [Path(x) for x in read_paths]
         breseq.params = params
+        breseq.seqsample = cls._infer_seqsample(breseq.read_paths)
         # Keep a copy of the reference on the Breseq object for easy
         # access.
         breseq.reference = breseq.params.reference
@@ -1261,6 +1330,88 @@ class Breseq:
         else:
             raise("Failed to infer read paths from log file.")
 
+    @staticmethod
+    def _infer_seqsample(read_paths: List[Path]) -> SeqSample:
+        """Infer the SeqSample these read_paths belong to.
+
+        Assumes the standard SeqOrder/Library/SeqSample folder layout:
+        <SEQ_ORDERS>/<seqorder_name>/<library_name>/<received|trimmed|filtered>/<fastq files>
+
+        Args:
+            read_paths: Paths to the input read files used for this breseq run.
+
+        Returns:
+            SeqSample the read_paths belong to.
+
+        Raises:
+            ValueError: If the SeqSample cannot be inferred from read_paths.
+        """
+        read_paths = [Path(p).resolve() for p in read_paths]
+        subfolder_path = read_paths[0].parent
+        subfolder_name = subfolder_path.name
+        if subfolder_name not in ('received', 'trimmed', 'filtered'):
+            raise ValueError(
+                f"Cannot infer SeqSample from read_paths: expected the reads to be "
+                f"in a 'received', 'trimmed', or 'filtered' folder, but found "
+                f"'{subfolder_name}' ({read_paths[0]})."
+            )
+
+        library_path = subfolder_path.parent
+        seqorder_path = library_path.parent
+        library_name = library_path.name
+        seqorder_name = seqorder_path.name
+
+        if library_name.endswith('_Illumina'):
+            platform = 'Illumina'
+        elif library_name.endswith('_Nanopore'):
+            platform = 'Nanopore'
+        else:
+            raise ValueError(
+                f"Cannot infer SeqSample from read_paths: library folder "
+                f"'{library_name}' does not end with '_Illumina' or '_Nanopore' "
+                f"({library_path})."
+            )
+
+        expected_seqorder_path = (Path(get_seqorders_path()) / seqorder_name).resolve()
+        if expected_seqorder_path != seqorder_path:
+            raise ValueError(
+                f"Cannot infer SeqSample from read_paths: {read_paths[0]} does not "
+                f"live under the configured sequencing orders directory "
+                f"({get_seqorders_path()})."
+            )
+
+        try:
+            seqorder = SeqOrder(seqorder_name)
+            library = Library(seqorder, platform, name=library_name)
+        except FileNotFoundError as e:
+            raise ValueError(f"Cannot infer SeqSample from read_paths {read_paths}: {e}") from e
+
+        try:
+            manifest = library.create_manifest(subfolder_name)
+        except FileNotFoundError as e:
+            raise ValueError(f"Cannot infer SeqSample from read_paths {read_paths}: {e}") from e
+
+        read_path_set = {str(p) for p in read_paths}
+        matched_sample_names = set()
+        for _, row in manifest.iterrows():
+            row_paths = set()
+            for col in ('R1', 'R2', 'fastq_file'):
+                value = row.get(col)
+                if value:
+                    row_paths.add(str(Path(value).resolve()))
+            if row_paths & read_path_set:
+                matched_sample_names.add(row['sample_name'])
+
+        if len(matched_sample_names) != 1:
+            raise ValueError(
+                f"Cannot infer SeqSample from read_paths {read_paths}: found "
+                f"{len(matched_sample_names)} matching samples in "
+                f"{library.path / subfolder_name} (expected exactly 1)."
+            )
+
+        sample_name = matched_sample_names.pop()
+        return SeqSample(library, sample_name)
+
     def _load_avg_coverage(self) -> Optional[float]:
         """Load average coverage for the run's reference from data/summary.json.
 
@@ -1787,13 +1938,121 @@ class Breseq:
 
         return gdiff
 
-    
+    def format_mutations(self, min_frequency: float = MIN_MUTATION_FREQUENCY):
+        """Parse this run's genome diff into a Mutations-table-ready DataFrame.
+
+        Filters the parsed genome diff (``self.parse_gdiff()``) down to actual
+        mutation entries (``MUTATION_TYPES``, excluding evidence records like
+        RA/JC/MC/UN) at or above ``min_frequency``, and tags each row with the
+        identifying columns the Mutations table expects: 'Seq_sample',
+        'Seqorder' (from ``self.seqsample``), and 'Breseq_registry_ID' (this
+        run's output folder name). Every column in ``MUTATIONS_REQUIRED_COLUMNS``
+        is guaranteed to be present, filled with None where this run's
+        mutations didn't populate it (e.g. no indels -> no repeat_* columns).
+
+        Args:
+            min_frequency: Minimum mutation frequency to include.
+
+        Returns:
+            pandas.DataFrame with one row per mutation, columns ordered per
+            MUTATIONS_REQUIRED_COLUMNS. Empty (no rows) if no mutations in
+            this run's genome diff pass the type/frequency filter.
+        """
+        import pandas as pd
+
+        gdiff = self.parse_gdiff()
+
+        mutation_frames = []
+        for entry in gdiff.get('entries', []):
+            if entry.get('type') not in MUTATION_TYPES:
+                continue
+            if float(entry.get('frequency', 1.0)) < min_frequency:
+                continue
+            mutation = {
+                'Seq_sample': self.seqsample.sample_name,
+                'Seqorder': self.seqsample.library.seqorder.name,
+                'Breseq_registry_ID': os.path.basename(str(self.output_folder)),
+            }
+            mutation.update(entry)
+            mutation_frames.append(pd.DataFrame(mutation))
+
+        if not mutation_frames:
+            return pd.DataFrame(columns=MUTATIONS_REQUIRED_COLUMNS)
+
+        mutations = pd.concat(mutation_frames, ignore_index=True)
+        for col in MUTATIONS_REQUIRED_COLUMNS:
+            if col not in mutations.columns:
+                mutations[col] = None
+
+        return mutations[MUTATIONS_REQUIRED_COLUMNS]
+
+    def upload_mutations(self, min_frequency: float = MIN_MUTATION_FREQUENCY) -> tuple:
+        """Format this run's mutations and upsert them into the LIMS 'Mutations' table.
+
+        Args:
+            min_frequency: Minimum mutation frequency to include (see
+                ``format_mutations``).
+
+        Returns:
+            Tuple of (rows_inserted, rows_updated). (0, 0) if this run has no
+            mutations passing the type/frequency filter - nothing is uploaded.
+        """
+        from aisynbiopipeline.limsapi.config import load_config
+        from aisynbiopipeline.limsapi.database import DatabaseManager
+
+        mutations = self.format_mutations(min_frequency=min_frequency)
+        if mutations.empty:
+            return (0, 0)
+
+        rows = mutations.to_dict('records')
+
+        config = load_config()
+        db_manager = DatabaseManager(config)
+        db_manager.connect()
+        try:
+            db_manager.sync_schema('Mutations', MUTATIONS_SCHEMA)
+            return db_manager.upsert_rows('Mutations', rows)
+        finally:
+            db_manager.disconnect()
+
+    def delete_mutations(self, soft: bool = True) -> int:
+        """Delete this run's mutations from the LIMS 'Mutations' table.
+
+        Matches rows by the same identifying columns ``upload_mutations``
+        tags them with: 'Seq_sample', 'Seqorder' (from ``self.seqsample``),
+        and 'Breseq_registry_ID' (this run's output folder name).
+
+        Args:
+            soft: If True (default), soft-delete (sets deleted=1); if False,
+                permanently remove the rows. See
+                ``DatabaseManager.delete_rows_where``.
+
+        Returns:
+            Number of rows affected.
+        """
+        from aisynbiopipeline.limsapi.config import load_config
+        from aisynbiopipeline.limsapi.database import DatabaseManager
+
+        conditions = {
+            'Seq_sample': self.seqsample.sample_name,
+            'Seqorder': self.seqsample.library.seqorder.name,
+            'Breseq_registry_ID': os.path.basename(str(self.output_folder)),
+        }
+
+        config = load_config()
+        db_manager = DatabaseManager(config)
+        db_manager.connect()
+        try:
+            return db_manager.delete_rows_where('Mutations', conditions, soft=soft)
+        finally:
+            db_manager.disconnect()
+
     def delete(self):
 
         registry = self._load_registry()
-        registry.pop(self.output_folder)
+        registry.pop(os.path.basename(self.output_folder))
         self._save_registry(registry)
         shutil.rmtree(self.output_folder)
         self.exists = False
         
-        print(f"{self.output_folder} has been deleted and {self.params.version_name} has been removed from this sample's breseq params registry.")
+        print(f"{self.output_folder} has been deleted and {os.path.basename(self.output_folder)} has been removed from this sample's breseq params registry.")

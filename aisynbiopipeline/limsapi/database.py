@@ -426,6 +426,72 @@ class DatabaseManager:
                 f"where {safe_col}={value!r}: {e}"
             )
 
+    def delete_rows_where(
+        self,
+        table_name: str,
+        conditions: Dict[str, Any],
+        soft: bool = True,
+    ) -> int:
+        """
+        Delete rows from a table matching ALL of the given column=value
+        conditions (AND), for when a single ``delete_rows`` column isn't
+        enough to uniquely identify the rows to remove.
+
+        See ``delete_rows`` for soft vs hard delete semantics; behaves the
+        same way, just with a multi-column WHERE clause.
+
+        Args:
+            table_name: Name of the table to delete from
+            conditions: Mapping of column name -> value; a row is only
+                deleted if it matches every condition
+            soft: If True (default), mark rows deleted=1; if False, remove them
+
+        Returns:
+            Number of rows affected
+
+        Raises:
+            ValueError: If conditions is empty
+            Exception: If the table doesn't exist or the delete fails
+        """
+        if not conditions:
+            raise ValueError("conditions must contain at least one column/value pair")
+
+        if not self.table_exists(table_name):
+            raise Exception(f"Table '{table_name}' does not exist")
+
+        # Match the column-name sanitization used elsewhere (create_table,
+        # upsert_rows, delete_rows) so callers can pass human-readable names.
+        safe_conditions = {
+            col.replace(' ', '_').replace('-', '_'): value
+            for col, value in conditions.items()
+        }
+
+        where_clause = ' AND '.join(f'"{col}"=?' for col in safe_conditions)
+        values = list(safe_conditions.values())
+
+        conn = self.get_connection()
+
+        try:
+            if soft:
+                sql = (
+                    f'UPDATE "{table_name}" SET deleted=1, last_synced=? '
+                    f'WHERE {where_clause} AND deleted=0'
+                )
+                cursor = conn.execute(sql, [datetime.now().isoformat()] + values)
+            else:
+                sql = f'DELETE FROM "{table_name}" WHERE {where_clause}'
+                cursor = conn.execute(sql, values)
+
+            conn.commit()
+            return cursor.rowcount
+
+        except Exception as e:
+            conn.rollback()
+            raise Exception(
+                f"Failed to delete rows from table '{table_name}' "
+                f"where {safe_conditions}: {e}"
+            )
+
     def get_all_tables(self) -> List[str]:
         """
         Get list of all tables in the database.
