@@ -279,6 +279,47 @@ def extract_robotic_od_data_to_df(
     return data
 
 
+def compute_cumulative_transfer(df):
+    """
+    Overwrite ``transfer`` with a cumulative transfer number that is
+    continuous across robot run-phase restarts.
+
+    A dataset may contain multiple ``series`` (plates) that run in parallel and
+    may be on different transfers; each continuous run phase of a series has its
+    own unique ``file_ID``, and on a restart the robot resets that series'
+    within-phase index (``plate_index``) back to 1. The cumulative transfer is
+    therefore computed **independently per series**: within each
+    ``(experiment, series)`` the run phases are ordered by their earliest
+    ``timestamp`` and each phase is offset by the total number of transfers
+    completed in that series' earlier phases (the sum of every earlier phase's
+    maximum ``plate_index``). ``plate_index`` is left untouched as the raw
+    per-phase index. When a series has a single run phase, its ``transfer`` is
+    unchanged.
+    """
+    # The extracted dataframe is built from per-row Series, so timestamp /
+    # plate_index can arrive as object dtype; coerce before numeric groupby ops.
+    phases = (
+        df.assign(_ts=pd.to_numeric(df['timestamp']),
+                  _plate_index=pd.to_numeric(df['plate_index']))
+          .groupby(['experiment', 'series', 'file_ID'])
+          .agg(start=('_ts', 'min'),
+               phase_transfers=('_plate_index', 'max'))
+          .reset_index()
+          .sort_values(['experiment', 'series', 'start'])
+    )
+    # Offset = cumulative transfers of all *earlier* run phases of the same
+    # series (series run in parallel and are numbered independently).
+    phases['offset'] = (
+        phases.groupby(['experiment', 'series'])['phase_transfers'].cumsum()
+        - phases['phase_transfers']
+    )
+    df = df.merge(phases[['experiment', 'series', 'file_ID', 'offset']],
+                  on=['experiment', 'series', 'file_ID'], how='left')
+    df['transfer'] = df['offset'] + pd.to_numeric(df['plate_index'])
+    df.drop(columns=['offset'], inplace=True)
+    return df
+
+
 def map_plate_layout_to_data(robotic_od_data_df, verified_plate_layout_df):
     df = robotic_od_data_df.merge(
         verified_plate_layout_df,
@@ -310,7 +351,9 @@ def compute_inoculation(df, first_reading_is_blank=False):
     timepoint (in hours) of every reading relative to it.
 
     The inoculation timestamp is the oldest timestamp within each
-    ``(experiment, series, Name, transfer)`` group. When
+    ``(experiment, series, Name, transfer)`` group, where ``transfer`` is the
+    cumulative transfer number (see ``compute_cumulative_transfer``) so that
+    run phases separated by a robot restart are not merged. When
     ``first_reading_is_blank`` is True the oldest reading of each group
     was taken before inoculation (a blank/media reading) and is skipped:
     the second-oldest timestamp is used as the inoculation timestamp

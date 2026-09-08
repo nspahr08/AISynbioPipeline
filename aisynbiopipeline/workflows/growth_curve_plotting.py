@@ -14,6 +14,42 @@ from matplotlib.lines import Line2D
 from matplotlib.ticker import LogFormatter, LogLocator
 
 
+# Alternating subtle background colors used to mark robot run phases.
+RUN_PHASE_SHADE_COLORS = ['#dbe9f6', '#f6ecdb']
+
+
+def annotate_run_phases(ax, df, label_y=0.02):
+    """Shade the datetime span of each robot run phase behind the curves.
+
+    A dataset can contain multiple run phases per series (each a unique
+    ``file_ID``) when the robot stops and restarts. This shades each phase's
+    [earliest, latest] ``datetime`` range with an alternating subtle background
+    color and labels it ``Run N`` in start-time order. Does nothing when the
+    data has a single run phase (or no ``file_ID`` column).
+    """
+    if 'file_ID' not in df.columns:
+        return
+    spans = df[['file_ID', 'datetime']].copy()
+    spans['datetime'] = pd.to_datetime(spans['datetime'])
+    spans = spans.dropna(subset=['datetime', 'file_ID'])
+    if spans.empty:
+        return
+    phases = (spans.groupby('file_ID')['datetime']
+                   .agg(['min', 'max'])
+                   .sort_values('min')
+                   .reset_index())
+    if len(phases) <= 1:
+        return
+    for i, row in phases.iterrows():
+        color = RUN_PHASE_SHADE_COLORS[i % len(RUN_PHASE_SHADE_COLORS)]
+        ax.axvspan(row['min'], row['max'], facecolor=color, alpha=0.5, zorder=0)
+        center = row['min'] + (row['max'] - row['min']) / 2
+        ax.text(center, label_y, f'Run {i + 1}',
+                transform=ax.get_xaxis_transform(),
+                ha='center', va='bottom', fontsize=10, color='#555555',
+                zorder=3)
+
+
 def plot_OD_replicates(df, subtract_background=False, blank=False,
                        yscale='log', append_title='', pdf=None, png=False, png_path=None):
     """
@@ -181,6 +217,9 @@ def plot_OD_replicates(df, subtract_background=False, blank=False,
     secax.set_xticks(transfer_datetimes, labels=df['transfer'].sort_values().unique())
     secax.set_xlabel('transfer')
 
+    # Indicate robot run-phase time ranges (only drawn when >1 phase present).
+    annotate_run_phases(ax, df)
+
     # ===== FINALIZE PLOT =====
     plt.title(append_title, fontsize=20, y=1.15)
     plt.legend(handles=legend_handles, labels=[h.get_label() for h in legend_handles],
@@ -314,6 +353,9 @@ def plot_OD_contam(df, subtract_background=False, yscale='log',
     secax = ax.secondary_xaxis('top')
     secax.set_xticks(transfer_starts, np.arange(1, df['transfer'].max() + 1, 1))
     secax.set_xlabel('transfer')
+
+    # Indicate robot run-phase time ranges (only drawn when >1 phase present).
+    annotate_run_phases(ax, df)
 
     # ===== FINALIZE PLOT =====
     plt.title(append_title + " ", fontsize=20)
