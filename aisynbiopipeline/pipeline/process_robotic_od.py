@@ -11,6 +11,11 @@ folder ID, it runs the following transformations:
   1. Load and verify the raw OD data files (load_and_verify_robotic_od_data).
   2. Extract the plate-reader files into a tidy dataframe
      (extract_robotic_od_data_to_df).
+  2b. Compute a cumulative transfer number that is continuous across robot
+     run-phase restarts (compute_cumulative_transfer). Each run phase has a
+     unique file_ID and resets its within-phase index after a restart; this
+     overwrites `transfer` with the cumulative value while leaving the raw
+     per-phase index in `plate_index`.
   3. Resolve the plate layout: load and verify the given file
      (load_and_verify_plate_layout), or, when plate_layout is "-", synthesize
      a one-plotting-group-per-well layout from the data itself
@@ -55,6 +60,7 @@ from aisynbiopipeline.workflows.roboticALE import (
     build_per_well_layout,
     load_and_verify_robotic_od_data,
     extract_robotic_od_data_to_df,
+    compute_cumulative_transfer,
     map_plate_layout_to_data,
     compute_background,
     compute_inoculation,
@@ -253,6 +259,12 @@ def main():
     # ------------------------------------------------------------------
     data = extract_robotic_od_data_to_df(files, args.fname_pattern)
     logger.info('Extracted %d measurement rows from data files', len(data))
+
+    # ------------------------------------------------------------------
+    # 2b. Compute cumulative transfer numbers across run phases
+    # ------------------------------------------------------------------
+    data = compute_cumulative_transfer(data)
+    logger.info('Computed cumulative transfer numbers across run phases')
 
     # ------------------------------------------------------------------
     # 3. Resolve the plate layout (from file, or synthesized per-well)
