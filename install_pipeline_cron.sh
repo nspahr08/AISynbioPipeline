@@ -47,7 +47,7 @@ OD_EXTRA_FLAGS=""                # e.g. --first-reading-is-blank, --skip-inocula
 # Optional: CSV of obsolete readings to drop from runs the robot restarted from
 # an earlier plate (columns: series, file_ID, plate_index; blank plate_index
 # drops the whole run phase). Leave empty to process everything.
-OD_EXCLUSIONS=""
+OD_EXCLUSIONS="/scratch1/fliu/hub_scratch/nspahr/tmp/TFMN5_transfers_to_exclude.csv"
 # =============================================================================
 
 # Assemble the optional --exclusions flag only when a path is configured, so the
