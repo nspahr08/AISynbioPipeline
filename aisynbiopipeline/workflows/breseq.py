@@ -688,6 +688,22 @@ MUTATIONS_SCHEMA: Dict[str, str] = {
 # (excludes 'Experiment', which is filled in separately, e.g. via LIMS sync).
 MUTATIONS_REQUIRED_COLUMNS = [col for col in MUTATIONS_SCHEMA if col != 'Experiment']
 
+# Schema for the LIMS 'Copy_numbers' table. Mirrors the schema in
+# aisynbiopipeline/pipeline/db_update_copy_numbers.py - keep the two in sync.
+COPY_NUMBER_SCHEMA: Dict[str, str] = {
+    'Seqsample': 'TEXT NOT NULL',
+    'Seqorder': 'TEXT',
+    'Breseq_registry_ID': 'TEXT',
+    'Refgenome': 'TEXT',
+    'Refgenome_avg_cov': 'FLOAT',
+    'Region_name': 'TEXT',
+    'Region_start': 'INTEGER',
+    'Region_stop': 'INTEGER',
+    'Region_avg_cov': 'FLOAT',
+    'Region_CN': 'FLOAT',
+}
+COPY_NUMBER_REQUIRED_COLUMNS = list(COPY_NUMBER_SCHEMA)
+
 
 class Breseq:
     """Manages breseq execution for a sample.
@@ -736,9 +752,14 @@ class Breseq:
         self.bam_path = Path(self.output_folder) / 'data' / 'reference.bam'
         self.title = os.path.basename(self.breseq_folder)
         # Per-instance cache of region average coverage values
-        # Key: region string (e.g., "NC_005966:1-1000") -> float or None
+        # Key: sanitized region string (e.g., "NC_005966_1_1000") -> float or None
         self.region_average_cov = {}
-        
+        try:
+            self._load_region_average_cov()
+        except Exception:
+            # Non-fatal if BAM2COV tab files are missing or malformed
+            pass
+
         # Average coverage for the run's reference (populated from data/summary.json)
         self.avg_coverage = None
         try:
@@ -796,8 +817,14 @@ class Breseq:
         breseq.title = os.path.basename(breseq.breseq_folder)
 
         breseq.exists = breseq.output_folder.exists() and (breseq.output_folder / 'output' / 'output.done').exists()
-        # Initialize per-instance cache for region coverage
+        # Initialize per-instance cache for region coverage, then eagerly
+        # load any coverage already computed by a prior get_region_average_coverage() call.
         breseq.region_average_cov = {}
+        try:
+            breseq._load_region_average_cov()
+        except Exception:
+            # Non-fatal if BAM2COV tab files are missing or malformed
+            print("Couldn't load region average coverage.")
 
         # Average coverage for the run's reference (populated from data/summary.json)
         breseq.avg_coverage = None
@@ -1601,6 +1628,56 @@ class Breseq:
 
         return str(outfile) + '.tab'
 
+    @staticmethod
+    def _parse_region(region: str) -> tuple:
+        """Split a 'genome:start-stop' region string into (genome, start, stop).
+
+        Returns (None, None, None) if the string cannot be parsed. Duplicated
+        from breseq_summary_utils._parse_region (breseq_summary_utils imports
+        Breseq from this module, so importing the other way would be circular).
+        """
+        try:
+            genome, coords = region.rsplit(':', 1)
+            start_str, stop_str = coords.split('-')
+            return genome, int(start_str), int(stop_str)
+        except (ValueError, AttributeError):
+            return None, None, None
+
+    @staticmethod
+    def _parse_region_average_cov_tab(path: Union[str, Path]) -> Optional[float]:
+        """Extract the 'region_average_cov' value from a BAM2COV .tab file."""
+        p = Path(path)
+        if not p.exists():
+            return None
+        try:
+            with open(p, 'r') as fh:
+                for line in fh:
+                    if 'region_average_cov' in line:
+                        parts = line.strip().split('\t')
+                        if parts:
+                            try:
+                                return float(parts[-1])
+                            except ValueError:
+                                return None
+        except Exception:
+            return None
+        return None
+
+    def _load_region_average_cov(self) -> None:
+        """Populate self.region_average_cov from any existing BAM2COV tab files.
+
+        Keyed by each file's stem (the same sanitized form
+        ``get_region_average_coverage`` uses, e.g. "NC_005966_1_1000"), since
+        that sanitization is lossy (colons and dashes both collapse to
+        underscores) and the original region string can't be reliably
+        recovered from the filename alone.
+        """
+        bam2cov_dir = Path(self.output_folder) / 'BAM2COV'
+        if not bam2cov_dir.exists():
+            return
+        for tab_path in bam2cov_dir.glob('*.tab'):
+            self.region_average_cov[tab_path.stem] = self._parse_region_average_cov_tab(tab_path)
+
     def get_region_average_coverage(
         self,
         region: str,
@@ -1610,55 +1687,129 @@ class Breseq:
 
         Behavior:
           - If the coverage .tab file for ``region`` exists under
-            ``<output_folder>/BAM2COV``, the file is parsed, cached, and 
+            ``<output_folder>/BAM2COV``, the file is parsed, cached, and
             returned.
           - If not present and ``run_if_missing`` is True, BAM2COV is
             run to produce the file, which is then parsed and cached.
           - If not present and ``run_if_missing`` is False, None is cached
             and returned.
 
-        The parsed value is stored in ``self.region_average_cov[region]``.
+        The parsed value is stored in ``self.region_average_cov[cache_key]``,
+        where ``cache_key`` is ``region`` with ':' and '-' replaced by '_'
+        (matching the BAM2COV tab filename, so this cache lines up with the
+        one ``_load_region_average_cov`` eagerly populates from disk).
         """
+        cache_key = region.replace(':', '_').replace('-', '_')
+
         # Return cached value if present
-        if region in self.region_average_cov:
-            return self.region_average_cov[region]
+        if cache_key in self.region_average_cov:
+            return self.region_average_cov[cache_key]
 
         bam2cov_dir = Path(self.output_folder) / 'BAM2COV'
-        outfile_base = region.replace(':', '_').replace('-', '_')
-        tab_path = bam2cov_dir / (outfile_base + '.tab')
-
-        def _parse_tab(path: Union[str, Path]) -> Optional[float]:
-            p = Path(path)
-            if not p.exists():
-                return None
-            try:
-                with open(p, 'r') as fh:
-                    for line in fh:
-                        if 'region_average_cov' in line:
-                            parts = line.strip().split('\t')
-                            if parts:
-                                try:
-                                    return float(parts[-1])
-                                except ValueError:
-                                    return None
-            except Exception:
-                return None
-            return None
+        tab_path = bam2cov_dir / (cache_key + '.tab')
 
         if tab_path.exists():
-            val = _parse_tab(tab_path)
-            self.region_average_cov[region] = val
+            val = self._parse_region_average_cov_tab(tab_path)
+            self.region_average_cov[cache_key] = val
             return val
 
         if not run_if_missing:
-            self.region_average_cov[region] = None
+            self.region_average_cov[cache_key] = None
             return None
 
         # Run BAM2COV to create the .tab file, then parse
         tabfile = self._run_bam2cov(region)
-        val = _parse_tab(tabfile)
-        self.region_average_cov[region] = val
+        val = self._parse_region_average_cov_tab(tabfile)
+        self.region_average_cov[cache_key] = val
         return val
+
+    def get_junction_copy_numbers(
+        self,
+        frequency_threshold: float,
+        cn_deviation_threshold: float,
+        run_if_missing: bool = True,
+    ):
+        """Find new-junction (JC) regions with copy number far from 1.
+
+        Parses this run's genome diff for JC entries at or above
+        frequency_threshold. For each one where both breakpoints land on the
+        same seq_id (the common case for IS-element-mediated tandem
+        duplications/deletions), computes the average coverage of the region
+        spanned by the two breakpoints (via get_region_average_coverage) and
+        divides by this run's reference genome average coverage
+        (self.avg_coverage) to get a copy number. Junctions whose two
+        breakpoints land on different seq_ids have no well-defined single
+        region and are skipped, not erred on.
+
+        Args:
+            frequency_threshold: Minimum junction frequency to consider.
+            cn_deviation_threshold: Only junctions whose copy number differs
+                from 1 by more than this (abs(copy_number - 1) > threshold)
+                are returned.
+            run_if_missing: Passed through to get_region_average_coverage -
+                if True (default), BAM2COV is run for regions with no
+                cached/on-disk coverage yet; if False, only already-known
+                coverage is used.
+
+        Returns:
+            pandas.DataFrame, one row per flagged junction, columns:
+            'region' (in the same "seqid:start-stop" format used as a
+            region_names key by format_copy_numbers/upload_copy_numbers),
+            'seq_id', 'start', 'stop', 'frequency', 'region_avg_cov',
+            'refgenome_avg_cov', 'copy_number', 'junction_id'. Empty if
+            none qualify.
+        """
+        import pandas as pd
+
+        gdiff = self.parse_gdiff()
+        refgenome_avg_cov = self.avg_coverage
+        columns = ['region', 'seq_id', 'start', 'stop', 'frequency',
+                   'region_avg_cov', 'refgenome_avg_cov', 'copy_number', 'junction_id']
+
+        rows = []
+        for entry in gdiff.get('entries', []):
+            if entry.get('type') != 'JC':
+                continue
+            try:
+                frequency = float(entry.get('frequency', 0))
+                if frequency < frequency_threshold:
+                    continue
+
+                seq_id_1 = entry['side_1_seq_id']
+                seq_id_2 = entry['side_2_seq_id']
+                if seq_id_1 != seq_id_2:
+                    continue  # no well-defined span across different seq_ids
+
+                pos_1 = int(entry['side_1_position'])
+                pos_2 = int(entry['side_2_position'])
+                start, stop = min(pos_1, pos_2), max(pos_1, pos_2)
+                region = f"{seq_id_1}:{start}-{stop}"
+
+                region_avg_cov = self.get_region_average_coverage(region, run_if_missing=run_if_missing)
+            except (KeyError, ValueError, TypeError):
+                continue  # malformed/unexpected entry shape - skip it
+
+            if region_avg_cov is not None and refgenome_avg_cov:
+                copy_number = region_avg_cov / refgenome_avg_cov
+            else:
+                copy_number = None
+
+            if copy_number is None or abs(copy_number - 1) <= cn_deviation_threshold:
+                continue
+
+            rows.append({
+                'region': region,
+                'seq_id': seq_id_1,
+                'start': start,
+                'stop': stop,
+                'frequency': frequency,
+                'region_avg_cov': region_avg_cov,
+                'refgenome_avg_cov': refgenome_avg_cov,
+                'copy_number': copy_number,
+                'junction_id': entry.get('id'),
+            })
+
+        return pd.DataFrame(rows, columns=columns)
 
     def count_mutations(
         self,
@@ -2044,6 +2195,129 @@ class Breseq:
         db_manager.connect()
         try:
             return db_manager.delete_rows_where('Mutations', conditions, soft=soft)
+        finally:
+            db_manager.disconnect()
+
+    def format_copy_numbers(self, region_names: Dict[str, str]):
+        """Build a Copy_numbers-table-ready DataFrame from this run's region coverage.
+
+        Args:
+            region_names: Maps each region string (e.g. "NC_005966:1-1000", the
+                same format breseq_summary_utils.get_region_parameter() returns)
+                to a human-readable region name (e.g. "dgoA-Star"). Every region
+                this run has coverage data for (every key in
+                self.region_average_cov) must have a matching entry here - the
+                match is made by sanitizing each region_names key the same way
+                self.region_average_cov's keys are sanitized (':' and '-' -> '_').
+
+        Returns:
+            pandas.DataFrame with one row per region in self.region_average_cov,
+            columns ordered per COPY_NUMBER_REQUIRED_COLUMNS. Empty if this run
+            has no region coverage data at all.
+
+        Raises:
+            ValueError: If a region in self.region_average_cov has no matching
+                entry in region_names.
+        """
+        import pandas as pd
+
+        sanitized_lookup = {}
+        for region_string, region_name in region_names.items():
+            sanitized_key = region_string.replace(':', '_').replace('-', '_')
+            sanitized_lookup[sanitized_key] = (region_string, region_name)
+
+        refgenome_avg_cov = self.avg_coverage
+
+        rows = []
+        for sanitized_key, region_avg_cov in self.region_average_cov.items():
+            if sanitized_key not in sanitized_lookup:
+                raise ValueError(
+                    f"Region '{sanitized_key}' has coverage data on this Breseq "
+                    f"run but no matching entry in region_names. Provide a name "
+                    f"for every region this run has coverage data for."
+                )
+            region_string, region_name = sanitized_lookup[sanitized_key]
+            genome, start, stop = self._parse_region(region_string)
+
+            if region_avg_cov is not None and refgenome_avg_cov:
+                region_cn = region_avg_cov / refgenome_avg_cov
+            else:
+                region_cn = None
+
+            rows.append({
+                'Seqsample': self.seqsample.sample_name,
+                'Seqorder': self.seqsample.library.seqorder.name,
+                'Breseq_registry_ID': os.path.basename(str(self.output_folder)),
+                'Refgenome': genome,
+                'Refgenome_avg_cov': refgenome_avg_cov,
+                'Region_name': region_name,
+                'Region_start': start,
+                'Region_stop': stop,
+                'Region_avg_cov': region_avg_cov,
+                'Region_CN': region_cn,
+            })
+
+        return pd.DataFrame(rows, columns=COPY_NUMBER_REQUIRED_COLUMNS)
+
+    def upload_copy_numbers(self, region_names: Dict[str, str]) -> tuple:
+        """Format this run's copy numbers and upsert them into the LIMS 'Copy_numbers' table.
+
+        Args:
+            region_names: See format_copy_numbers.
+
+        Returns:
+            Tuple of (rows_inserted, rows_updated). (0, 0) if this run has no
+            region coverage data - nothing is uploaded.
+        """
+        from aisynbiopipeline.limsapi.config import load_config
+        from aisynbiopipeline.limsapi.database import DatabaseManager
+
+        copy_numbers = self.format_copy_numbers(region_names)
+        if copy_numbers.empty:
+            return (0, 0)
+
+        rows = copy_numbers.to_dict('records')
+
+        config = load_config()
+        db_manager = DatabaseManager(config)
+        db_manager.connect()
+        try:
+            db_manager.sync_schema('Copy_numbers', COPY_NUMBER_SCHEMA)
+            return db_manager.upsert_rows('Copy_numbers', rows)
+        finally:
+            db_manager.disconnect()
+
+    def delete_copy_numbers(self, soft: bool = True) -> int:
+        """Delete this run's copy numbers from the LIMS 'Copy_numbers' table.
+
+        Matches rows by the same identifying columns used for mutations
+        (see ``delete_mutations``): 'Seqsample' (note: no underscore, unlike
+        the Mutations table's 'Seq_sample'), 'Seqorder' (from
+        ``self.seqsample``), and 'Breseq_registry_ID' (this run's output
+        folder name).
+
+        Args:
+            soft: If True (default), soft-delete (sets deleted=1); if False,
+                permanently remove the rows. See
+                ``DatabaseManager.delete_rows_where``.
+
+        Returns:
+            Number of rows affected.
+        """
+        from aisynbiopipeline.limsapi.config import load_config
+        from aisynbiopipeline.limsapi.database import DatabaseManager
+
+        conditions = {
+            'Seqsample': self.seqsample.sample_name,
+            'Seqorder': self.seqsample.library.seqorder.name,
+            'Breseq_registry_ID': os.path.basename(str(self.output_folder)),
+        }
+
+        config = load_config()
+        db_manager = DatabaseManager(config)
+        db_manager.connect()
+        try:
+            return db_manager.delete_rows_where('Copy_numbers', conditions, soft=soft)
         finally:
             db_manager.disconnect()
 
