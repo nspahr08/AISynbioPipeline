@@ -30,7 +30,7 @@ CRON_PROCESS_OD="5,15,25,35,45,55 * * * *"  # robotic OD processing at 5,15,25,3
 GLOBUS_SOURCE_ENDPOINT="391a895a-05b8-4e6a-a48a-fde1aa727769"  # source collection UUID
 GLOBUS_DEST_ENDPOINT="local"                                    # 'local' = this host's GCP endpoint
 GLOBUS_SOURCE_PATH="/REAL_RUNS/LiveExperimentDataOutput/"                                  # e.g. /path/on/source/
-GLOBUS_DEST_PATH="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/downloads/TFMN5"                                    # under /scratch1/fliu/hub_scratch/synbio/
+GLOBUS_DEST_PATH="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/downloads/TFMN6"                                    # under /scratch1/fliu/hub_scratch/synbio/
 GLOBUS_EXTRA_FLAGS="--poll-interval 300"                        # e.g. --poll-interval 300, --no-wait
 
 # Globus Native App Client ID (needed by globus_transfer.py). Captured from the
@@ -38,16 +38,17 @@ GLOBUS_EXTRA_FLAGS="--poll-interval 300"                        # e.g. --poll-in
 GLOBUS_CLIENT_ID="${GLOBUS_CLIENT_ID:-52c5931a-75b5-480c-8c0c-1c28a69817e4}"
 
 # Robotic OD processing: data_dir plate_layout output_dir gdrive_folder_id
-OD_DATA_DIR="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/downloads/TFMN5"          # directory with robotic OD .txt files
+OD_DATA_DIR="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/downloads/TFMN6"          # directory with robotic OD .txt files
 # OD_PLATE_LAYOUT="-"
-OD_PLATE_LAYOUT="/scratch1/fliu/hub_scratch/nspahr/tmp/TFMN5-plate-layout_LIMS.csv"      # path to plate_layout.csv
+OD_PLATE_LAYOUT="/scratch1/fliu/hub_scratch/nspahr/tmp/TFMN6-plate-layout_LIMS.csv"      # path to plate_layout.csv
 OD_OUTPUT_DIR="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/downloads/testing_od_transfer_and_processing"        # where processed CSV + plots are written
 OD_GDRIVE_FOLDER_ID="18lNLMIsAYf5X5ViiVmMQj2L78iU9eCi5"  # Google Drive folder ID to upload results to
 OD_EXTRA_FLAGS=""                # e.g. --first-reading-is-blank, --skip-inoculation
 # Optional: CSV of obsolete readings to drop from runs the robot restarted from
 # an earlier plate (columns: series, file_ID, plate_index; blank plate_index
 # drops the whole run phase). Leave empty to process everything.
-OD_EXCLUSIONS="/scratch1/fliu/hub_scratch/nspahr/tmp/TFMN5_transfers_to_exclude.csv"
+OD_EXCLUSIONS=""
+# OD_EXCLUSIONS="/scratch1/fliu/hub_scratch/nspahr/tmp/TFMN5_transfers_to_exclude.csv"
 # =============================================================================
 
 # Assemble the optional --exclusions flag only when a path is configured, so the
