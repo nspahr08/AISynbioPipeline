@@ -44,7 +44,18 @@ OD_PLATE_LAYOUT="/scratch1/fliu/hub_scratch/nspahr/tmp/TFMN5-plate-layout_LIMS.c
 OD_OUTPUT_DIR="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/downloads/testing_od_transfer_and_processing"        # where processed CSV + plots are written
 OD_GDRIVE_FOLDER_ID="18lNLMIsAYf5X5ViiVmMQj2L78iU9eCi5"  # Google Drive folder ID to upload results to
 OD_EXTRA_FLAGS=""                # e.g. --first-reading-is-blank, --skip-inoculation
+# Optional: CSV of obsolete readings to drop from runs the robot restarted from
+# an earlier plate (columns: series, file_ID, plate_index; blank plate_index
+# drops the whole run phase). Leave empty to process everything.
+OD_EXCLUSIONS=""
 # =============================================================================
+
+# Assemble the optional --exclusions flag only when a path is configured, so the
+# process-od command line is unchanged when no exclusions are needed.
+OD_EXCLUSIONS_FLAG=""
+if [[ -n "$OD_EXCLUSIONS" ]]; then
+    OD_EXCLUSIONS_FLAG="--exclusions $OD_EXCLUSIONS"
+fi
 
 # Log for cron stdout/stderr (each script also writes aisynbiopipeline/pipeline/pipeline.log).
 SYNBIO_DIR="${SYNBIO_DIR:-/scratch1/fliu/hub_scratch/synbio}"
@@ -80,7 +91,7 @@ MAILTO=""
 AISYNBIO_PYTHON=$PYTHON_BIN
 GLOBUS_CLIENT_ID=$GLOBUS_CLIENT_ID
 $CRON_GLOBUS $WRAPPER globus $GLOBUS_SOURCE_ENDPOINT $GLOBUS_DEST_ENDPOINT $GLOBUS_SOURCE_PATH $GLOBUS_DEST_PATH $GLOBUS_EXTRA_FLAGS >> $CRON_LOG 2>&1
-$CRON_PROCESS_OD $WRAPPER process-od $OD_DATA_DIR $OD_PLATE_LAYOUT $OD_OUTPUT_DIR $OD_GDRIVE_FOLDER_ID $OD_EXTRA_FLAGS >> $CRON_LOG 2>&1
+$CRON_PROCESS_OD $WRAPPER process-od $OD_DATA_DIR $OD_PLATE_LAYOUT $OD_OUTPUT_DIR $OD_GDRIVE_FOLDER_ID $OD_EXCLUSIONS_FLAG $OD_EXTRA_FLAGS >> $CRON_LOG 2>&1
 $END_MARKER
 EOF
 }
@@ -140,6 +151,10 @@ case "${1:-install}" in
             echo "Warning: no Globus token at $GLOBUS_TOKEN_FILE." >&2
             echo "The transfer job will fail until you run:" >&2
             echo "    GLOBUS_CLIENT_ID=$GLOBUS_CLIENT_ID $PYTHON_BIN aisynbiopipeline/pipeline/globus_transfer.py login --data-access $GLOBUS_SOURCE_ENDPOINT" >&2
+        fi
+        if [[ -n "$OD_EXCLUSIONS" && ! -f "$OD_EXCLUSIONS" ]]; then
+            echo "Warning: OD_EXCLUSIONS is set but the file does not exist: $OD_EXCLUSIONS" >&2
+            echo "The processing job will fail until this CSV exists (columns: series, file_ID, plate_index)." >&2
         fi
         echo "Using interpreter: $PYTHON_BIN"
         echo "Cron log:          $CRON_LOG"

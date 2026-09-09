@@ -11,6 +11,11 @@ folder ID, it runs the following transformations:
   1. Load and verify the raw OD data files (load_and_verify_robotic_od_data).
   2. Extract the plate-reader files into a tidy dataframe
      (extract_robotic_od_data_to_df).
+  2a. Optionally drop obsolete/duplicate readings from run phases that the robot
+     restarted from an earlier plate (exclude_obsolete_data); enabled with
+     --exclusions <csv> (columns: series, file_ID, plate_index; a blank
+     plate_index drops the whole run phase). Runs before the cumulative
+     transfer numbering so each phase's max plate_index reflects only kept data.
   2b. Compute a cumulative transfer number that is continuous across robot
      run-phase restarts (compute_cumulative_transfer). Each run phase has a
      unique file_ID and resets its within-phase index after a restart; this
@@ -60,6 +65,7 @@ from aisynbiopipeline.workflows.roboticALE import (
     build_per_well_layout,
     load_and_verify_robotic_od_data,
     extract_robotic_od_data_to_df,
+    exclude_obsolete_data,
     compute_cumulative_transfer,
     map_plate_layout_to_data,
     compute_background,
@@ -123,6 +129,15 @@ def parse_args():
         default=None,
         help='Experiment name used as the output filename prefix '
              '(default: inferred from the data)',
+    )
+    parser.add_argument(
+        '--exclusions',
+        default=None,
+        help='Path to a CSV of obsolete readings to drop (columns: series, '
+             'file_ID, plate_index; a blank plate_index drops the whole run '
+             'phase). Applied before cumulative transfer numbering, to remove '
+             'duplicate data from run phases the robot restarted from an '
+             'earlier plate',
     )
     parser.add_argument(
         '--ats-folder',
@@ -259,6 +274,17 @@ def main():
     # ------------------------------------------------------------------
     data = extract_robotic_od_data_to_df(files, args.fname_pattern)
     logger.info('Extracted %d measurement rows from data files', len(data))
+
+    # ------------------------------------------------------------------
+    # 2a. Drop obsolete/duplicate readings from restart-from-earlier-plate runs
+    # ------------------------------------------------------------------
+    if args.exclusions:
+        before = len(data)
+        data = exclude_obsolete_data(data, args.exclusions)
+        logger.info(
+            'Excluded %d obsolete reading row(s) using %s',
+            before - len(data), args.exclusions,
+        )
 
     # ------------------------------------------------------------------
     # 2b. Compute cumulative transfer numbers across run phases

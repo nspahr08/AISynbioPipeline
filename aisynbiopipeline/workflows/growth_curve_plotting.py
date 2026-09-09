@@ -125,7 +125,7 @@ def draw_axis_breaks(ax, xpositions, d=0.008):
 
 def plot_OD_replicates(df, subtract_background=False, blank=False,
                        yscale='log', append_title='', pdf=None, png=False,
-                       png_path=None, max_gap_hours=10):
+                       png_path=None, max_gap_hours=24):
     """
     Plot optical density growth curves for experimental replicates.
 
@@ -333,7 +333,7 @@ def plot_OD_replicates(df, subtract_background=False, blank=False,
 
 def plot_OD_contam(df, subtract_background=False, yscale='log',
                    append_title='', pdf=None, png=False, png_path=None,
-                   max_gap_hours=10):
+                   max_gap_hours=24):
     """
     Plot contamination monitoring data with outlier detection.
 

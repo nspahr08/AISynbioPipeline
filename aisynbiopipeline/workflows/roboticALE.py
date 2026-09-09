@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import re
 import os
+import warnings
 from datetime import datetime
 
 
@@ -277,6 +278,98 @@ def extract_robotic_od_data_to_df(
     data['datetime'] = pd.to_datetime(data['datetime'])
 
     return data
+
+
+EXCLUSION_COLUMNS = ['series', 'file_ID', 'plate_index']
+
+
+def exclude_obsolete_data(df, exclusions):
+    """
+    Drop obsolete/duplicate readings produced when the robot restarts a run
+    phase from an earlier plate.
+
+    When the robot fails mid-plate and, on restart, resumes a series from an
+    earlier plate under a new ``file_ID``, the earlier run phase's overlapping
+    readings become obsolete duplicates (data files are never overwritten). This
+    removes explicitly listed readings **before** ``compute_cumulative_transfer``
+    runs, so each phase's maximum ``plate_index`` — and therefore the cumulative
+    transfer offsets — reflect only the kept data. Run it right after
+    ``extract_robotic_od_data_to_df`` (while ``plate_index`` still equals the raw
+    per-phase index from the filename) and before ``compute_cumulative_transfer``.
+
+    Args:
+        df: Extracted robotic OD dataframe (output of
+            ``extract_robotic_od_data_to_df``), with ``series``, ``file_ID`` and
+            ``plate_index`` columns.
+        exclusions: Rows to drop, as a pandas.DataFrame, a path to a CSV
+            (str/Path), or None. Must have columns ``series``, ``file_ID`` and
+            ``plate_index``. Each row drops all readings matching
+            ``(series, file_ID, plate_index)``; a blank/NA ``plate_index`` drops
+            every reading of that ``(series, file_ID)`` run phase. None or an
+            empty table is a no-op.
+
+    Returns:
+        pandas.DataFrame: ``df`` with the matching rows removed (index reset).
+        All columns, including the raw ``plate_index``, are otherwise unchanged.
+
+    Raises:
+        ValueError: If ``exclusions`` is missing a required column.
+    """
+    if exclusions is None:
+        return df
+    if isinstance(exclusions, (str, Path)):
+        exclusions = pd.read_csv(exclusions)
+    if len(exclusions) == 0:
+        return df
+
+    missing = set(EXCLUSION_COLUMNS) - set(exclusions.columns)
+    if missing:
+        raise ValueError(
+            f"exclusions is missing required columns: {sorted(missing)}"
+        )
+
+    SEP = '\x00'
+
+    def as_key(s):
+        # Extracted columns can be object dtype; compare as stripped strings.
+        return s.astype(str).str.strip()
+
+    # Keys over the data: a whole-phase key (series, file_ID) and a per-plate
+    # triple key (series, file_ID, plate_index).
+    df_phase = as_key(df['series']) + SEP + as_key(df['file_ID'])
+    df_triple = (
+        df_phase + SEP
+        + pd.to_numeric(df['plate_index'], errors='coerce').astype('Int64').astype(str)
+    )
+
+    # Split the exclusions: blank plate_index -> whole-phase drop; otherwise a
+    # specific (series, file_ID, plate_index) triple.
+    ex_s = as_key(exclusions['series'])
+    ex_f = as_key(exclusions['file_ID'])
+    ex_p = pd.to_numeric(exclusions['plate_index'], errors='coerce')
+    drop_phase_keys = set(ex_s[ex_p.isna()] + SEP + ex_f[ex_p.isna()])
+    drop_triple_keys = set(
+        ex_s[ex_p.notna()] + SEP + ex_f[ex_p.notna()] + SEP
+        + ex_p[ex_p.notna()].astype(int).astype(str)
+    )
+
+    # Warn on exclusion rows that match nothing (likely a mistyped
+    # file_ID / plate_index), so silent no-ops don't hide user error.
+    phase_set = set(df_phase)
+    triple_set = set(df_triple)
+    unmatched = (
+        [k for k in drop_phase_keys if k not in phase_set]
+        + [k for k in drop_triple_keys if k not in triple_set]
+    )
+    if unmatched:
+        warnings.warn(
+            "exclude_obsolete_data: %d exclusion(s) matched no readings "
+            "(check series/file_ID/plate_index): %s"
+            % (len(unmatched), sorted(k.replace(SEP, '|') for k in unmatched))
+        )
+
+    drop = df_phase.isin(drop_phase_keys) | df_triple.isin(drop_triple_keys)
+    return df.loc[~drop].reset_index(drop=True)
 
 
 def compute_cumulative_transfer(df):
