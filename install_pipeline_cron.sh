@@ -42,7 +42,7 @@ OD_DATA_DIR="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/
 # OD_PLATE_LAYOUT="-"
 OD_PLATE_LAYOUT="/scratch1/fliu/hub_scratch/nspahr/tmp/TFMN6-plate-layout_LIMS.csv"      # path to plate_layout.csv
 OD_OUTPUT_DIR="/scratch1/fliu/hub_scratch/synbio/ai_synbio_data/experimental_data/downloads/testing_od_transfer_and_processing"        # where processed CSV + plots are written
-OD_GDRIVE_FOLDER_ID="18lNLMIsAYf5X5ViiVmMQj2L78iU9eCi5"  # Google Drive folder ID to upload results to
+OD_GDRIVE_FOLDER_ID="19YG351FWFW7ZxR6t0ng-d-fraU3r2q1l"  # Google Drive folder ID to upload results to
 OD_EXTRA_FLAGS=""                # e.g. --first-reading-is-blank, --skip-inoculation
 # Optional: CSV of obsolete readings to drop from runs the robot restarted from
 # an earlier plate (columns: series, file_ID, plate_index; blank plate_index
