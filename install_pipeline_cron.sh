@@ -19,10 +19,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WRAPPER="$SCRIPT_DIR/pipeline_cron.sh"
 
 # --- Schedule (standard cron: minute hour day-of-month month day-of-week) ----
-CRON_GLOBUS="0,10,20,30,40,50 * * * *"       # Globus transfer at 0,10,20,30,40,50 min of every hour (for testing)
-CRON_PROCESS_OD="5,15,25,35,45,55 * * * *"  # robotic OD processing at 5,15,25,35,45,55 min of every hour (for testing)
-# CRON_GLOBUS="0 */2 * * *"       # Globus transfer at :00 of every even hour
-# CRON_PROCESS_OD="30 */2 * * *"  # robotic OD processing at :30 of every even hour
+# CRON_GLOBUS="0,10,20,30,40,50 * * * *"       # Globus transfer at 0,10,20,30,40,50 min of every hour (for testing)
+# CRON_PROCESS_OD="5,15,25,35,45,55 * * * *"  # robotic OD processing at 5,15,25,35,45,55 min of every hour (for testing)
+CRON_GLOBUS="0 */2 * * *"       # Globus transfer at :00 of every even hour
+CRON_PROCESS_OD="30 */2 * * *"  # robotic OD processing at :30 of every even hour
 # -----------------------------------------------------------------------------
 
 # === JOB ARGUMENTS (EDIT THESE) ==============================================
